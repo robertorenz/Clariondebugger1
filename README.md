@@ -17,8 +17,10 @@ Grab the latest build from **[Releases](https://github.com/robertorenz/Clarionde
 Both are **self-contained** (the .NET 8 runtime + WPF are bundled — nothing to install). The app
 is 32-bit to match Clarion's 32-bit EXEs and runs on 64-bit Windows.
 
-To rebuild the release artifacts: `powershell installer\build-release.ps1` (needs the .NET 8 SDK
-and [Inno Setup 6](https://jrsoftware.org/isinfo.php)).
+Maintainers — cut a new release in one command (builds artifacts **and** creates the GitHub
+release): `powershell installer\publish-release.ps1 -Version x.y.z` (needs the .NET 8 SDK,
+[Inno Setup 6](https://jrsoftware.org/isinfo.php), and an authenticated `gh`). To only build the
+artifacts locally: `powershell installer\build-release.ps1 -Version x.y.z`.
 
 ## Features
 
