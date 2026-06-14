@@ -134,13 +134,26 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement fe && fe.Tag is SourceLine sl) ToggleBreak(sl.LineNo);
     }
 
-    void ToggleBreak(int line)
+    void ToggleBreak(int clicked)
     {
-        if (_curModule == null) return;
+        if (_curModule == null || _info == null) return;
+        // snap to the nearest line that actually has executable code in this module
+        int line = _info.NearestCodeLine(_curModule, clicked) ?? clicked;
         var key = (_curModule, line);
         var sl = _lines.FirstOrDefault(l => l.LineNo == line);
-        if (_breaks.Remove(key)) { if (sl != null) sl.HasBreakpoint = false; Log($"Breakpoint cleared at {_curModule}:{line}."); }
-        else { _breaks.Add(key); if (sl != null) sl.HasBreakpoint = true; Log($"Breakpoint set at {_curModule}:{line}."); }
+        if (_breaks.Remove(key))
+        {
+            if (sl != null) sl.HasBreakpoint = false;
+            Log($"Breakpoint cleared at {_curModule}:{line}.");
+        }
+        else
+        {
+            _breaks.Add(key);
+            if (sl != null) sl.HasBreakpoint = true;
+            Log(line == clicked
+                ? $"Breakpoint set at {_curModule}:{line}."
+                : $"Breakpoint set at {_curModule}:{line} (no code on line {clicked}; moved to nearest).");
+        }
     }
 
     // ---------- run control ----------

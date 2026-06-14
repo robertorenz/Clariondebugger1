@@ -12,6 +12,16 @@ Console.WriteLine($"globals   : {info.Globals.Count}");
 Console.WriteLine($"procs     : {info.Procedures.Count}");
 Console.WriteLine($"entryRvas : {string.Join(", ", info.Procedures.OrderBy(p => p.Rva).Take(12).Select(p => $"{p.Name}@0x{p.Rva:X}"))}");
 Console.WriteLine($"modules   : {info.Modules.Count} ({info.Modules.Count(m => m.Lines.Count > 0)} with debug lines)");
+if (bpLine == 0 && args.Length > 2)   // dump locals of procedures matching a name
+{
+    foreach (var p in info.Procs.Where(p => p.Name.Contains(args[2], StringComparison.OrdinalIgnoreCase)))
+    {
+        Console.WriteLine($"\nproc {p.Name} @0x{p.EntryRva:X}  ({p.Locals.Count} locals):");
+        foreach (var lv in p.Locals)
+            Console.WriteLine($"   {lv.Name,-20} {lv.Type.Describe(),-14} frame={lv.FrameOffset}");
+    }
+    return;
+}
 if (bpLine == 0)   // parse-only diagnostic mode
 {
     Console.WriteLine("\nmodules with debug lines:");

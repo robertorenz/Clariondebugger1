@@ -12,6 +12,7 @@ public sealed class TswdSymbol
     public bool IsParam;
     public int DisplaySize = 4; // bytes to show when the type isn't fully decoded
     public bool Threaded;       // lives in .cwtls (Clarion thread-local)
+    public bool IsStatic;       // local statically allocated at an RVA (threaded proc) vs EBP-relative
 }
 
 public sealed class TswdProc
@@ -54,6 +55,7 @@ public sealed class TswdInfo
 
     byte[] _b = Array.Empty<byte>();
     int _nameBase, _symBase;
+    PeImage? _pe;
     readonly Dictionary<int, ClaType> _typeCache = new();
 
     static uint U32(byte[] b, int o) => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(o));
@@ -124,6 +126,7 @@ public sealed class TswdInfo
 
     void ScanSymbols(PeImage pe)
     {
+        _pe = pe;
         int nameSz = _symBase - _nameBase;
         var seenProc = new HashSet<uint>();
         var seenGlobal = new HashSet<uint>();
@@ -223,16 +226,34 @@ public sealed class TswdInfo
         int localCount = (int)RU32(b + 25);
         var proc = new TswdProc { Name = Name(nameOff), EntryRva = entry };
         if (ValidRef(retTypeRef) && retTypeRef > 0) proc.RetType = ParseType(retTypeRef);
+        var seen = new HashSet<string>();
         for (int i = 0; i < localCount && i < 1024; i++)
         {
             int lref = (int)RU32(b + 29 + 4 * i);
-            if (!ValidRef(lref)) break;
-            byte ltag = RB(_symBase + lref + 4);
-            if (ltag != 0x04 && ltag != 0x0c) continue;
-            var sym = ParseVar(lref);
-            // genuine locals/params have small EBP-relative offsets; entries with a
-            // data-section RVA are globals referenced by the proc, not locals — skip them.
-            if (Math.Abs(sym.FrameOffset) < 0x10000) proc.Locals.Add(sym);
+            // The local-record reference can point either at the record (tag at ref+4, as in
+            // simple procs) or directly at the tag (tag at ref+0, seen in threaded ABC procs).
+            // Try both and accept whichever yields a clean variable record.
+            TswdSymbol? sym = null;
+            foreach (int cand in new[] { lref, lref - 4 })
+            {
+                if (!ValidRef(cand)) continue;
+                byte tg = RB(_symBase + cand + 4);
+                if (tg != 0x04 && tg != 0x0c) continue;
+                var s = ParseVar(cand);
+                if (CleanName(s.Name)) { sym = s; break; }
+            }
+            if (sym == null || !seen.Add(sym.Name)) continue;
+
+            // Threaded ABC procedures allocate locals statically (data RVA); simple procs use
+            // an EBP-relative frame offset.
+            uint asRva = (uint)sym.FrameOffset;
+            if (_pe != null && _pe.IsDataRva(asRva))
+            {
+                sym.IsStatic = true; sym.Rva = asRva; sym.Threaded = _pe.IsTlsRva(asRva); sym.FrameOffset = 0;
+                proc.Locals.Add(sym);
+            }
+            else if (Math.Abs(sym.FrameOffset) < 0x10000)
+                proc.Locals.Add(sym);
         }
         return proc;
     }
@@ -321,6 +342,22 @@ public sealed class TswdInfo
         }
         foreach (var m in Modules) { var r = LineInModule(m, line); if (r != null) return r; }
         return null;
+    }
+
+    /// <summary>Nearest source line that actually has code in the given module (for snapping breakpoints).</summary>
+    public int? NearestCodeLine(string module, int line)
+    {
+        var m = Modules.FirstOrDefault(x => x.Name.Equals(module, StringComparison.OrdinalIgnoreCase));
+        if (m == null || m.Lines.Count == 0) return null;
+        int? up = null, down = null;
+        foreach (var (l, _) in m.Lines)
+        {
+            if (l == line) return line;
+            if (l > line && (up == null || l < up)) up = l;
+            if (l < line && (down == null || l > down)) down = l;
+        }
+        // prefer the next line forward (where execution of the clicked statement would resume)
+        return up ?? down;
     }
 
     static uint? LineInModule(TswdModule m, int line)

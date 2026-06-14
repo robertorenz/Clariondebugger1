@@ -183,9 +183,12 @@ public sealed class DebugSession
         var locals = new List<VarValue>();
         var proc = _info.ProcContaining(eipRva);
         if (proc != null)
-            foreach (var lv in proc.Locals.OrderBy(l => l.FrameOffset))
-                locals.Add(ReadVar(lv.Name, (uint)((long)ctx.Ebp + lv.FrameOffset),
-                                   lv.Type, lv.Type.Size > 0 ? lv.Type.Size : 4));
+            foreach (var lv in proc.Locals)
+            {
+                uint va = lv.IsStatic ? _base + lv.Rva : (uint)((long)ctx.Ebp + lv.FrameOffset);
+                int sz = lv.Type.Size > 0 ? lv.Type.Size : 4;
+                locals.Add(ReadVar(lv.Name, va, lv.Type, sz, lv.Threaded));
+            }
 
         Stopped?.Invoke(new StopInfo(ctx.Eip, loc?.Module, loc?.Line, stack, globals, locals, reason));
     }

@@ -92,6 +92,12 @@ MSBuild.exe sample/dbgtest/dbgtest.cwproj /p:Configuration=Debug `
 - [ ] Live thread-local (`.cwtls`) file buffers (`STU:Record`): `.cwtls` is Clarion-managed
       (not Windows TLS — TLS data dir is empty), so live per-thread values need ClaRUN's
       thread-block internals. Currently shown from the image template, flagged `[tls]`.
+- [~] **Locals in threaded ABC procedures** — simple/non-threaded procedures show full typed
+      locals. Threaded window procedures (e.g. `BrowseStudents`) use a more complex local
+      container (refs mixing variables, group-members and type records, tag at +0 or +4);
+      partially decoded — some locals (e.g. `CurrentTab`) now resolve, full list is WIP.
+- [x] **Breakpoints snap to the nearest executable line** and report when moved (clicking a
+      declaration line no longer silently jumps into an unrelated procedure).
 - [ ] Stepping: step over / into / out (line granularity).
 - [ ] Per-frame locals (select a stack frame → show its locals using that frame's EBP).
 - [ ] Clarion ROUTINE frame sharing (routines reuse the parent procedure's locals).
