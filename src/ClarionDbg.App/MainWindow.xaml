@@ -123,6 +123,20 @@
                         <Setter Property="FontFamily" Value="Consolas"/>
                         <Setter Property="FontSize" Value="12"/>
                         <Setter Property="CanUserAddRows" Value="False"/>
+                        <Setter Property="RowStyle">
+                            <Setter.Value>
+                                <Style TargetType="DataGridRow">
+                                    <Setter Property="ToolTip">
+                                        <Setter.Value>
+                                            <ToolTip Background="#FF1E1E1E" Foreground="{StaticResource Fg}"
+                                                     BorderBrush="{StaticResource Accent}">
+                                                <TextBlock Text="{Binding Tip}" FontFamily="Consolas" FontSize="12"/>
+                                            </ToolTip>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Setter.Value>
+                        </Setter>
                         <Setter Property="ColumnHeaderStyle">
                             <Setter.Value>
                                 <Style TargetType="DataGridColumnHeader">

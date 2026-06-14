@@ -207,7 +207,7 @@ public partial class MainWindow : Window
 
         _vars.Clear();
         foreach (var v in info.Globals)
-            _vars.Add(new VarRow { Name = v.Name, Type = v.TypeName, Value = v.Display, Address = $"0x{v.Addr:X8}" });
+            _vars.Add(new VarRow { Name = v.Name, Type = v.TypeName, Value = v.Display, Address = $"0x{v.Addr:X8}", Tip = v.Full });
 
         Status($"Stopped at line {info.Line}. Press Go to continue.");
     });
@@ -219,7 +219,7 @@ public partial class MainWindow : Window
         TxtLocalsHeader.Text = $"LOCALS — {f.Proc}" + (f.Line is int ln ? $"  ({f.Module}:{ln})" : "");
         _localsRows.Clear();
         foreach (var v in f.Locals)
-            _localsRows.Add(new VarRow { Name = v.Name, Type = v.TypeName, Value = v.Display, Address = $"0x{v.Addr:X8}" });
+            _localsRows.Add(new VarRow { Name = v.Name, Type = v.TypeName, Value = v.Display, Address = $"0x{v.Addr:X8}", Tip = v.Full });
         // jump the source view to the selected frame's line
         if (f.Module != null && f.Line is int fl)
         {
@@ -336,4 +336,5 @@ public sealed class VarRow
     public string Type { get; set; } = "";
     public string Value { get; set; } = "";
     public string Address { get; set; } = "";
+    public string Tip { get; set; } = "";
 }

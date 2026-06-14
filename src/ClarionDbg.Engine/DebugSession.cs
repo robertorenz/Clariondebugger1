@@ -7,7 +7,7 @@ public sealed class DebugSession
 {
     public record Breakpoint(string? Module, int Line);
     public record Frame(string Proc, uint Addr, string? Module, int? Line, IReadOnlyList<VarValue> Locals);
-    public record VarValue(string Name, uint Addr, string TypeName, string Display);
+    public record VarValue(string Name, uint Addr, string TypeName, string Display, string Full);
     public record StopInfo(uint Eip, string? Module, int? Line, IReadOnlyList<Frame> Stack,
                            IReadOnlyList<VarValue> Globals, IReadOnlyList<VarValue> Locals, string Reason);
 
@@ -203,26 +203,47 @@ public sealed class DebugSession
     VarValue ReadVar(string name, uint va, ClaType type, int size, bool threaded = false)
     {
         int n = Math.Clamp(size, 1, 8192);   // guard against garbage sizes
-        string disp;
+        string disp, full;
         try
         {
             var raw = ReadBytes(va, n);
-            disp = type.Kind == TypeKind.Unknown ? RenderRaw(raw) : type.Format(raw);
+            (disp, full) = Render(raw, type);
         }
-        catch { disp = "<unreadable>"; }
-        if (threaded) disp = "[tls] " + disp;
+        catch { disp = full = "<unreadable>"; }
+        if (threaded) { disp = "[tls] " + disp; full = "(thread-local; shown from image template)\n" + full; }
         string tn = type.Kind == TypeKind.Unknown ? $"<{n}b>" : type.Describe();
-        return new VarValue(name, va, tn, disp);
+        return new VarValue(name, va, tn, disp, full);
     }
 
-    /// <summary>Show undecoded data as hex with an ASCII gutter so values stay readable.</summary>
-    static string RenderRaw(byte[] b)
+    /// <summary>Concise value + a complete tooltip. Undecoded data is shown as a string when it
+    /// looks like text, as an integer for 4-byte fields, else hex — with full detail in the tip.</summary>
+    static (string Display, string Full) Render(byte[] b, ClaType type)
     {
-        int n = Math.Min(b.Length, 48);
-        var hex = new System.Text.StringBuilder();
-        for (int i = 0; i < Math.Min(n, 12); i++) hex.Append(b[i].ToString("X2")).Append(' ');
-        var asc = new string(b.Take(n).Select(x => x >= 32 && x < 127 ? (char)x : '·').ToArray());
-        return $"{hex.ToString().TrimEnd()}   '{asc}'";
+        if (type.Kind != TypeKind.Unknown)
+        {
+            string d = type.Format(b);
+            return (d, $"{type.Describe()} = {d}");
+        }
+        string ascii = new string(b.TakeWhile(x => x != 0).Select(x => x >= 32 && x < 127 ? (char)x : '·').ToArray());
+        int printable = 0;
+        foreach (var x in b) { if (x >= 32 && x < 127) printable++; else break; }
+
+        string disp;
+        if (printable >= 2)
+            disp = "'" + (ascii.Length > 48 ? ascii[..48] + "…" : ascii) + "'";
+        else if (b.Length >= 4) disp = BinaryPrimitives.ReadInt32LittleEndian(b).ToString();
+        else if (b.Length == 2) disp = BinaryPrimitives.ReadInt16LittleEndian(b).ToString();
+        else disp = b[0].ToString();   // BYTE -> decimal
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("hex:   ").Append(BitConverter.ToString(b).Replace("-", " "));
+        var allAscii = new string(b.Select(x => x >= 32 && x < 127 ? (char)x : '·').ToArray());
+        sb.Append("\nascii: '").Append(allAscii).Append('\'');
+        if (b.Length >= 4)
+            sb.Append($"\nint32: {BinaryPrimitives.ReadInt32LittleEndian(b)}   uint32: {BinaryPrimitives.ReadUInt32LittleEndian(b)}   hex: 0x{BinaryPrimitives.ReadUInt32LittleEndian(b):X8}");
+        if (b.Length >= 8)
+            sb.Append($"\nreal8: {BitConverter.ToDouble(b, 0):0.######}");
+        return (disp, sb.ToString());
     }
 
     string FrameLabel(uint rva, uint absAddr)
