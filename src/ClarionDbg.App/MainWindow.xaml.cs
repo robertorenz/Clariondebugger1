@@ -86,6 +86,7 @@ public partial class MainWindow : Window
             _allProcs = _info.Procedures.OrderBy(p => p.Name)
                              .Select(p => new ProcItem(p.Name, p.Rva)).ToList();
             FilterProcs("");
+            BuildSourceTypeIndex();   // read declared types from the .clw sources
             Log($"Loaded {Path.GetFileName(path)} — {_info.ModuleCount} modules " +
                 $"({withLines.Count} with debug lines), {_info.Lines.Count} line entries, " +
                 $"{_info.Procedures.Count} procedures.");
@@ -229,7 +230,7 @@ public partial class MainWindow : Window
         _suppressStackSource = false;
 
         _vars.Clear();
-        foreach (var v in info.Globals) _vars.Add(ToRow(v));
+        foreach (var v in info.Globals) _vars.Add(ToRow(v, null));
 
         Status($"Stopped at line {info.Line}. Press Go to continue.");
     });
@@ -241,7 +242,7 @@ public partial class MainWindow : Window
         _stickyFrame = f.Proc;          // remember the user's choice so steps keep it selected
         TxtLocalsHeader.Text = $"LOCALS — {f.Proc}" + (f.Line is int ln ? $"  ({f.Module}:{ln})" : "");
         _localsRows.Clear();
-        foreach (var v in f.Locals) _localsRows.Add(ToRow(v));
+        foreach (var v in f.Locals) _localsRows.Add(ToRow(v, f.Module));
         // jump the source view to the selected frame's line — but only on an explicit click,
         // not when we re-select the sticky frame on a stop (then the source follows execution)
         if (!_suppressStackSource && f.Module != null && f.Line is int fl)
@@ -341,11 +342,70 @@ public partial class MainWindow : Window
             if (rows[i].Name == vals[i].Name) { rows[i].Value = vals[i].Display; rows[i].Tip = vals[i].Full; }
     }
 
-    static VarRow ToRow(DebugSession.VarValue v) => new()
+    VarRow ToRow(DebugSession.VarValue v, string? module)
     {
-        Name = v.Name, Type = v.TypeName, Value = v.Display, Address = $"0x{v.Addr:X8}",
-        Tip = v.Full, AddrValue = v.Addr, Size = v.Size, Kind = v.Kind
-    };
+        // prefer the exact type as declared in the .clw source; else the engine's inferred type
+        string type = LookupDeclType(module, v.Name) ?? v.TypeName;
+        return new VarRow
+        {
+            Name = v.Name, Type = type, Value = v.Display, Address = $"0x{v.Addr:X8}",
+            Tip = v.Full, AddrValue = v.Addr, Size = v.Size, Kind = v.Kind
+        };
+    }
+
+    // ---------- declared types from .clw source ----------
+    readonly Dictionary<string, string> _typeByModName = new();          // "MODULE\0NAME" -> declared type
+    readonly Dictionary<string, string> _typeByName = new(StringComparer.OrdinalIgnoreCase);
+
+    static readonly HashSet<string> StructuralKw = new(StringComparer.OrdinalIgnoreCase)
+    { "PROCEDURE","FUNCTION","ROUTINE","MAP","MODULE","CODE","END","CLASS","INTERFACE",
+      "APPLICATION","OMIT","COMPILE","INCLUDE","SECTION","PROGRAM","MEMBER" };
+
+    void BuildSourceTypeIndex()
+    {
+        _typeByModName.Clear(); _typeByName.Clear();
+        if (_info == null) return;
+        foreach (var m in _info.Modules)
+        {
+            var src = ResolveSource(m.Name);
+            if (src == null) continue;
+            try { ParseDecls(m.Name, File.ReadAllLines(src)); } catch { }
+        }
+    }
+
+    void ParseDecls(string module, string[] lines)
+    {
+        string modKey = module.ToUpperInvariant();
+        foreach (var line in lines)
+        {
+            if (line.Length == 0 || char.IsWhiteSpace(line[0]) || line[0] == '!') continue;   // labels start at col 1
+            int sp = 0; while (sp < line.Length && !char.IsWhiteSpace(line[sp])) sp++;
+            if (sp >= line.Length) continue;
+            string label = line[..sp];
+            string rest = line[sp..].Trim();
+            int bang = FindComment(rest); if (bang >= 0) rest = rest[..bang].Trim();
+            if (rest.Length == 0) continue;
+            int w = 0; while (w < rest.Length && !char.IsWhiteSpace(rest[w]) && rest[w] != '(' && rest[w] != ',') w++;
+            if (StructuralKw.Contains(rest[..w])) continue;          // skip procs/structures/etc.
+            string nameUp = label.ToUpperInvariant();
+            _typeByModName[modKey + "\0" + nameUp] = rest;
+            _typeByName[nameUp] = rest;
+        }
+    }
+
+    static int FindComment(string s)   // first '!' that isn't inside a string literal
+    {
+        bool q = false;
+        for (int i = 0; i < s.Length; i++) { if (s[i] == '\'') q = !q; else if (s[i] == '!' && !q) return i; }
+        return -1;
+    }
+
+    string? LookupDeclType(string? module, string name)
+    {
+        string n = name.ToUpperInvariant();
+        if (module != null && _typeByModName.TryGetValue(module.ToUpperInvariant() + "\0" + n, out var t)) return t;
+        return _typeByName.TryGetValue(n, out var g) ? g : null;
+    }
 
     // ---------- edit value (write to process memory) ----------
     void GridLocals_DoubleClick(object sender, MouseButtonEventArgs e) => EditRow(GridLocals.SelectedItem as VarRow);

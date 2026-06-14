@@ -19,15 +19,15 @@ public sealed class ClaType
 
     public string Describe() => Kind switch
     {
-        TypeKind.Int => $"int{Size * 8}",
-        TypeKind.UInt => $"uint{Size * 8}",
-        TypeKind.Float => Size == 4 ? "real4" : "real8",
-        TypeKind.Char => "char",
-        TypeKind.Decimal => $"decimal(.{Places})",
-        TypeKind.PDecimal => $"pdecimal(.{Places})",
-        TypeKind.String => $"string({Length})",
-        TypeKind.Array => $"{Element?.Describe()}[{Length}]",
-        TypeKind.Group => $"group({Members.Count})",
+        TypeKind.Int => Size switch { 1 => "BYTE", 2 => "SHORT", 4 => "LONG", _ => $"int{Size * 8}" },
+        TypeKind.UInt => Size switch { 1 => "BYTE", 2 => "USHORT", 4 => "ULONG", _ => $"uint{Size * 8}" },
+        TypeKind.Float => Size == 4 ? "SREAL" : "REAL",
+        TypeKind.Char => "STRING(1)",
+        TypeKind.Decimal => $"DECIMAL(,{Places})",
+        TypeKind.PDecimal => $"PDECIMAL(,{Places})",
+        TypeKind.String => $"STRING({Length})",
+        TypeKind.Array => $"{Element?.Describe()},DIM({Length})",
+        TypeKind.Group => $"GROUP({Members.Count})",
         _ => "?"
     };
 

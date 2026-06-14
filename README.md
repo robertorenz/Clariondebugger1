@@ -87,8 +87,13 @@ MSBuild.exe sample/dbgtest/dbgtest.cwproj /p:Configuration=Debug `
 - [x] **Readable values for every global** — fully typed where the type is decoded
       (scalar/string/group/array/decimal), else size-aware hex + ASCII (size inferred from the
       next symbol), so e.g. `DEFAULTERRORS`, tooltip tables, scroll data show real text.
-- [ ] Decode ABC's complex global type tree (the `0x03` type-wrapper → class refs, `&`
-      pointers, FILE/QUEUE/VIEW). Today these show as raw hex+ASCII rather than structured.
+- [x] **Exact declared types from `.clw` source** — the Type column shows the type as written
+      in source (`STRING(80)`, `STRING('asdf {16}')`, `LONG`), parsed from each module's
+      declarations (label-at-col-1), scoped per module; falls back to a size/content-inferred
+      Clarion type (`STRING(n)`/`LONG`/`BYTE`/`REAL`) when the source isn't found. This
+      sidesteps the undecoded ABC binary type tree entirely for display purposes.
+- [ ] Decode ABC's binary global type tree (the `0x03` wrapper) — only needed where source
+      is unavailable; the source-based types cover the normal case.
 - [ ] Live thread-local (`.cwtls`) file buffers (`STU:Record`): `.cwtls` is Clarion-managed
       (not Windows TLS — TLS data dir is empty), so live per-thread values need ClaRUN's
       thread-block internals. Currently shown from the image template, flagged `[tls]`.

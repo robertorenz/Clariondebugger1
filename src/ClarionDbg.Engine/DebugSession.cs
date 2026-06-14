@@ -330,9 +330,20 @@ public sealed class DebugSession
         }
         catch { disp = full = "<unreadable>"; kind = WriteKind.Raw; }
         if (threaded) { disp = "[tls] " + disp; full = "(thread-local; shown from image template)\n" + full; }
-        string tn = type.Kind == TypeKind.Unknown ? $"<{n}b>" : type.Describe();
+        string tn = type.Kind == TypeKind.Unknown ? InferType(kind, n) : type.Describe();
         return new VarValue(name, va, tn, disp, full, n, kind);
     }
+
+    /// <summary>Best-effort Clarion type for variables whose type record isn't decoded — inferred
+    /// from byte size and content. Accurate for STRING/LONG/SHORT/BYTE/REAL; a DATE/CSTRING/&amp;ref
+    /// will look like LONG/STRING.</summary>
+    static string InferType(WriteKind kind, int n) => kind switch
+    {
+        WriteKind.Str => $"STRING({n})",
+        WriteKind.Float => n <= 4 ? "SREAL" : "REAL",
+        WriteKind.Int or WriteKind.UInt => n switch { 1 => "BYTE", 2 => "SHORT", 4 => "LONG", 8 => "REAL", _ => $"<{n}b>" },
+        _ => $"<{n}b>"
+    };
 
     /// <summary>Concise value + a complete tooltip + how to write it back. Undecoded data is shown
     /// as a string when it looks like text, as an integer for 4-byte fields, else hex.</summary>
