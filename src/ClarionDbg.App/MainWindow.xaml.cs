@@ -28,6 +28,16 @@ public partial class MainWindow : Window
     readonly ObservableCollection<SourceLine> _lines = new();
     readonly ObservableCollection<VarRow> _vars = new();
     readonly ObservableCollection<VarRow> _localsRows = new();
+    string _localsFilter = "", _globalsFilter = "";
+
+    static bool FilterMatch(object o, string f) =>
+        string.IsNullOrEmpty(f) || (o is VarRow r && r.Name.Contains(f, StringComparison.OrdinalIgnoreCase));
+
+    void TxtLocalsFilter_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    { _localsFilter = TxtLocalsFilter.Text; System.Windows.Data.CollectionViewSource.GetDefaultView(_localsRows).Refresh(); }
+
+    void TxtGlobalsFilter_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    { _globalsFilter = TxtGlobalsFilter.Text; System.Windows.Data.CollectionViewSource.GetDefaultView(_vars).Refresh(); }
 
     readonly System.Windows.Threading.DispatcherTimer _liveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
 
@@ -37,6 +47,9 @@ public partial class MainWindow : Window
         SourceList.ItemsSource = _lines;
         GridVars.ItemsSource = _vars;
         GridLocals.ItemsSource = _localsRows;
+        // name filters (collection-view filtering keeps the live refresh working)
+        System.Windows.Data.CollectionViewSource.GetDefaultView(_localsRows).Filter = o => FilterMatch(o, _localsFilter);
+        System.Windows.Data.CollectionViewSource.GetDefaultView(_vars).Filter = o => FilterMatch(o, _globalsFilter);
         _liveTimer.Tick += (_, _) => RefreshLive();
         Loaded += (_, _) =>
         {

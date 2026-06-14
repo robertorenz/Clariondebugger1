@@ -155,12 +155,18 @@
                 </Grid.Resources>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <TextBlock x:Name="TxtLocalsHeader" Grid.Row="0" Text="LOCALS (current procedure)" Style="{StaticResource Header}"/>
-                <DataGrid x:Name="GridLocals" Grid.Row="1" Style="{StaticResource VarGrid}"
+                <TextBox x:Name="TxtLocalsFilter" Grid.Row="1" Margin="8,0,8,4" Padding="4,2"
+                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                         BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="11"
+                         TextChanged="TxtLocalsFilter_TextChanged" ToolTip="Filter locals by name"/>
+                <DataGrid x:Name="GridLocals" Grid.Row="2" Style="{StaticResource VarGrid}"
                           MouseDoubleClick="GridLocals_DoubleClick" PreviewMouseRightButtonDown="Grid_RightDown">
                     <DataGrid.ContextMenu>
                         <ContextMenu><MenuItem Header="Set Value…" Click="SetValue_Click"/></ContextMenu>
@@ -172,8 +178,12 @@
                         <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="Auto"/>
                     </DataGrid.Columns>
                 </DataGrid>
-                <TextBlock Grid.Row="2" Text="GLOBALS" Style="{StaticResource Header}"/>
-                <DataGrid x:Name="GridVars" Grid.Row="3" Style="{StaticResource VarGrid}"
+                <TextBlock Grid.Row="3" Text="GLOBALS" Style="{StaticResource Header}"/>
+                <TextBox x:Name="TxtGlobalsFilter" Grid.Row="4" Margin="8,0,8,4" Padding="4,2"
+                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                         BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="11"
+                         TextChanged="TxtGlobalsFilter_TextChanged" ToolTip="Filter globals by name"/>
+                <DataGrid x:Name="GridVars" Grid.Row="5" Style="{StaticResource VarGrid}"
                           MouseDoubleClick="GridVars_DoubleClick" PreviewMouseRightButtonDown="Grid_RightDown">
                     <DataGrid.ContextMenu>
                         <ContextMenu><MenuItem Header="Set Value…" Click="SetValue_Click"/></ContextMenu>
