@@ -204,6 +204,11 @@ public partial class MainWindow : Window
         LstStack.ItemsSource = info.Stack.Select((f, i) =>
             $"#{i} {f.Proc}  0x{f.Addr:X8}" + (f.Line is int fl ? $"  {f.Module}:{fl}" : "")).ToList();
 
+        // make the procedure we stopped in obvious — its name + module
+        var top = info.Stack.FirstOrDefault();
+        string proc = top?.Proc ?? "?";
+        TxtLocalsHeader.Text = $"LOCALS — {proc}" + (info.Module != null ? $"  ({info.Module}:{info.Line})" : "");
+
         _localsRows.Clear();
         foreach (var v in info.Locals)
             _localsRows.Add(new VarRow { Name = v.Name, Type = v.TypeName, Value = v.Display, Address = $"0x{v.Addr:X8}" });

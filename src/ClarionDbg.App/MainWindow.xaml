@@ -136,7 +136,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="LOCALS (current procedure)" Style="{StaticResource Header}"/>
+                <TextBlock x:Name="TxtLocalsHeader" Grid.Row="0" Text="LOCALS (current procedure)" Style="{StaticResource Header}"/>
                 <DataGrid x:Name="GridLocals" Grid.Row="1" Style="{StaticResource VarGrid}">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto"/>

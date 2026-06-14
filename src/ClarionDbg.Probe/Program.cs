@@ -12,6 +12,14 @@ Console.WriteLine($"globals   : {info.Globals.Count}");
 Console.WriteLine($"procs     : {info.Procedures.Count}");
 Console.WriteLine($"entryRvas : {string.Join(", ", info.Procedures.OrderBy(p => p.Rva).Take(12).Select(p => $"{p.Name}@0x{p.Rva:X}"))}");
 Console.WriteLine($"modules   : {info.Modules.Count} ({info.Modules.Count(m => m.Lines.Count > 0)} with debug lines)");
+if (bpLine == 0 && args.Length > 2 && args[2].StartsWith("findlocal:"))
+{
+    string want = args[2]["findlocal:".Length..];
+    foreach (var p in info.Procs.Where(p => p.Locals.Any(l => l.Name.Contains(want, StringComparison.OrdinalIgnoreCase))))
+        Console.WriteLine($"proc {p.Name} @0x{p.EntryRva:X}  has {p.Locals.Count} locals incl: " +
+            string.Join(", ", p.Locals.Where(l => l.Name.Contains(want, StringComparison.OrdinalIgnoreCase)).Select(l => l.Name)));
+    return;
+}
 if (bpLine == 0 && args.Length > 2)   // dump locals of procedures matching a name
 {
     foreach (var p in info.Procs.Where(p => p.Name.Contains(args[2], StringComparison.OrdinalIgnoreCase)))
