@@ -165,6 +165,7 @@
                         <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto"/>
                         <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto"/>
                         <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                        <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="Auto"/>
                     </DataGrid.Columns>
                 </DataGrid>
                 <TextBlock Grid.Row="2" Text="GLOBALS" Style="{StaticResource Header}"/>
