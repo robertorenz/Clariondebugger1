@@ -92,7 +92,10 @@ public sealed class ClaType
                     return sb.Append('}').ToString();
                 }
             default:
-                return "0x" + BitConverter.ToString(b, off, Math.Min(Size, b.Length - off)).Replace("-", "");
+                int avail = b.Length - off;
+                if (avail <= 0) return "?";
+                int show = Math.Min(avail, Size > 0 ? Size : 4);
+                return "0x" + BitConverter.ToString(b, off, show).Replace("-", "");
         }
     }
 

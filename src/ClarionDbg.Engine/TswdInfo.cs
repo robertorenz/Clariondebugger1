@@ -111,37 +111,72 @@ public sealed class TswdInfo
         // pick the app's primary module (last non-empty .clw, usually the program) for default display
         info.SourceFile = info.Modules.LastOrDefault(m => m.Lines.Count > 0)?.Name ?? "";
 
-        // top-level symbols — isolate each so one malformed record can't kill the load
-        for (int i = 0; i < amCnt; i++)
-        {
-            int e = amOff + i * 8;
-            if (e + 8 > blob.Length) break;
-            uint rva = U32(blob, e);
-            int reff = (int)U32(blob, e + 4);
-            if (!info.ValidRef(reff)) continue;
-            byte tag = info.RB(info._symBase + reff + 4);
-            try
-            {
-                if (tag == 0x04)
-                {
-                    var sym = info.ParseVar(reff);
-                    sym.IsGlobal = true; sym.Rva = (uint)sym.FrameOffset; sym.FrameOffset = 0;
-                    // keep only plausible global data symbols (filters misread class/local records)
-                    bool cleanName = sym.Name.Length > 0 && sym.Name[0] != '?' &&
-                                     sym.Name.All(ch => ch >= 32 && ch < 127);
-                    if (cleanName && sym.Rva >= 0x1000 && sym.Rva < 0x4000000) info.Globals.Add(sym);
-                }
-                else if (tag == 0x05)
-                {
-                    var p = info.ParseProc(reff);
-                    info.Procs.Add(p);
-                    info.Procedures.Add((p.Name, p.EntryRva));
-                }
-            }
-            catch { /* skip records we don't understand (classes/VMTs/interfaces) */ }
-        }
+        // The address map indexes ALL debug records (incl. locals/inner records) and points
+        // into them at varying offsets, so it can't be used to enumerate top-level symbols.
+        // Instead scan the symbol-record stream for procedure (0x05) and global-var (0x04)
+        // records, validated against the PE layout. This finds every procedure across all
+        // modules (the address map only surfaces a fraction).
+        info.ScanSymbols(pe);
         return info;
     }
+
+    void ScanSymbols(PeImage pe)
+    {
+        int nameSz = _symBase - _nameBase;
+        var seenProc = new HashSet<uint>();
+        var seenGlobal = new HashSet<uint>();
+        for (int o = _symBase; o + 25 < _symEnd; o++)
+        {
+            byte tag = _b[o];
+            if (tag == 0x05)   // procedure
+            {
+                int nameOff = (int)RU32(o + 5);
+                uint entry = RU32(o + 9);
+                int lcount = (int)RU32(o + 21);
+                if (nameOff > 0 && nameOff < nameSz && pe.IsCodeRva(entry) && lcount is >= 0 and < 2000
+                    && seenProc.Add(entry))
+                {
+                    string nm = Name(nameOff);
+                    if (CleanName(nm))
+                    {
+                        try
+                        {
+                            var p = ParseProc(o - _symBase - 4);
+                            if (p.Name == nm) { Procs.Add(p); Procedures.Add((p.Name, p.EntryRva)); }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            else if (tag == 0x04)   // global variable (offset is a data RVA, not a frame offset)
+            {
+                int typeRef = (int)RU32(o + 1);
+                int nameOff = (int)RU32(o + 5);
+                uint rva = RU32(o + 9);
+                if (nameOff > 0 && nameOff < nameSz && ValidRef(typeRef) && pe.IsDataRva(rva)
+                    && seenGlobal.Add(rva))
+                {
+                    string nm = Name(nameOff);
+                    // skip compiler-internal virtual method tables
+                    if (CleanName(nm) && !nm.StartsWith("VMT$") && !nm.StartsWith("VMTP$"))
+                    {
+                        try
+                        {
+                            var sym = ParseVar(o - _symBase - 4);
+                            sym.IsGlobal = true; sym.Rva = rva; sym.FrameOffset = 0;
+                            Globals.Add(sym);
+                        }
+                        catch { }
+                    }
+                }
+            }
+        }
+        Procs.Sort((a, b) => a.EntryRva.CompareTo(b.EntryRva));
+        Globals.Sort((a, b) => a.Rva.CompareTo(b.Rva));
+    }
+
+    static bool CleanName(string s) =>
+        s.Length is > 0 and < 96 && s[0] != '?' && s.All(ch => ch >= 32 && ch < 127);
 
     // ---- bounds-safe blob readers ----
     int _symEnd;
@@ -181,7 +216,9 @@ public sealed class TswdInfo
             byte ltag = RB(_symBase + lref + 4);
             if (ltag != 0x04 && ltag != 0x0c) continue;
             var sym = ParseVar(lref);
-            proc.Locals.Add(sym);
+            // genuine locals/params have small EBP-relative offsets; entries with a
+            // data-section RVA are globals referenced by the proc, not locals — skip them.
+            if (Math.Abs(sym.FrameOffset) < 0x10000) proc.Locals.Add(sym);
         }
         return proc;
     }

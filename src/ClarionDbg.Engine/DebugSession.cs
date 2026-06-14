@@ -177,22 +177,25 @@ public sealed class DebugSession
         // globals (typed)
         var globals = new List<VarValue>();
         foreach (var g in _info.Globals.OrderBy(g => g.Rva))
-        {
-            uint va = _base + g.Rva;
-            globals.Add(new VarValue(g.Name, va, g.Type.Describe(), g.Type.Format(ReadBytes(va, Math.Max(g.Type.Size, 1)))));
-        }
+            globals.Add(ReadVar(g.Name, _base + g.Rva, g.Type));
 
         // locals of the procedure we stopped in (EBP-relative)
         var locals = new List<VarValue>();
         var proc = _info.ProcContaining(eipRva);
         if (proc != null)
             foreach (var lv in proc.Locals.OrderBy(l => l.FrameOffset))
-            {
-                uint va = (uint)((long)ctx.Ebp + lv.FrameOffset);
-                locals.Add(new VarValue(lv.Name, va, lv.Type.Describe(), lv.Type.Format(ReadBytes(va, Math.Max(lv.Type.Size, 1)))));
-            }
+                locals.Add(ReadVar(lv.Name, (uint)((long)ctx.Ebp + lv.FrameOffset), lv.Type));
 
         Stopped?.Invoke(new StopInfo(ctx.Eip, loc?.Module, loc?.Line, stack, globals, locals, reason));
+    }
+
+    VarValue ReadVar(string name, uint va, ClaType type)
+    {
+        int n = type.Size > 0 ? Math.Clamp(type.Size, 1, 8192) : 4;   // guard against garbage/unknown sizes
+        string disp;
+        try { disp = type.Format(ReadBytes(va, n)); }
+        catch { disp = "<unreadable>"; }
+        return new VarValue(name, va, type.Describe(), disp);
     }
 
     string FrameLabel(uint rva, uint absAddr)

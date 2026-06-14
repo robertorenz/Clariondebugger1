@@ -46,6 +46,16 @@ public sealed class PeImage
         return t != null && rva >= t.Rva && rva < t.Rva + t.VSize;
     }
 
+    /// <summary>True if rva falls in a writable data section (globals / file buffers / TLS).</summary>
+    public bool IsDataRva(uint rva)
+    {
+        foreach (var s in Sections)
+            if ((s.Name == ".data" || s.Name == ".cwtls" || s.Name == ".bss") &&
+                rva >= s.Rva && rva < s.Rva + Math.Max(s.VSize, s.RawSize))
+                return true;
+        return false;
+    }
+
     /// <summary>Returns the raw bytes of the appended TSWD debug blob, or null if release build.</summary>
     public byte[]? ReadCwDebugBlob()
     {

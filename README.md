@@ -81,9 +81,15 @@ MSBuild.exe sample/dbgtest/dbgtest.cwproj /p:Configuration=Debug `
 - [x] Proper module attribution for call-stack frames outside the debuggee module.
 - [x] **Multi-module ABC apps** — parse the module table; map RVA ↔ (module, line) across
       all modules; module picker in the UI; source resolution incl. Clarion `libsrc`.
+- [x] **Full symbol enumeration via stream scan** — finds every procedure (1221 in the
+      School demo vs 67 from the address map) so locals resolve in any procedure, plus all
+      global data symbols (VMT noise filtered, frame-offset filter separates locals/globals).
+- [ ] Decode ABC's complex global types (class refs, `&` pointers, FILE/QUEUE/VIEW). Today
+      such globals show name + raw value; scalar/string/group/array/decimal types are full.
+- [ ] Thread-local (`.cwtls`) file buffers (`STU:Record`) need TLS-slot resolution.
 - [ ] Stepping: step over / into / out (line granularity).
 - [ ] Per-frame locals (select a stack frame → show its locals using that frame's EBP).
-- [ ] Robust global-data symbols for multi-module apps (currently filtered/partial).
+- [ ] Clarion ROUTINE frame sharing (routines reuse the parent procedure's locals).
 - [ ] Edit-variable-at-runtime (`WriteProcessMemory`), watch expressions, conditional BPs.
 - [ ] STRING/CSTRING/PSTRING distinction; DATE/TIME calendar formatting.
 - [ ] Disassembly + memory windows, threads list.

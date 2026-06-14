@@ -45,10 +45,12 @@ sess.Stopped += info2 =>
     Console.WriteLine("globals (typed, live values):");
     foreach (var v in info2.Globals)
         Console.WriteLine($"   {v.Name,-12} {v.TypeName,-14} = {v.Display}");
-    Console.WriteLine("\n(continuing…)");
-    sess.Continue();
+    if (Environment.GetEnvironmentVariable("CLARIONDBG_ONCE") == "1")
+    { Console.WriteLine("\n(terminating after first hit)"); sess.Terminate(); }
+    else { Console.WriteLine("\n(continuing…)"); sess.Continue(); }
 };
 
-sess.Start(new[] { new DebugSession.Breakpoint(null, bpLine) });
+string? bpModule = args.Length > 2 ? args[2] : null;
+sess.Start(new[] { new DebugSession.Breakpoint(bpModule, bpLine) });
 done.Wait(8000);
 Console.WriteLine("probe finished.");
