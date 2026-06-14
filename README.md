@@ -5,30 +5,33 @@ A clean, modern replacement for the crash-prone debugger built into Clarion. It 
 `TSWD` debug information and driving the process with the standard **Win32 Debugging API** —
 no dependency on the proprietary `D32` engine.
 
-## Status — Milestones 1 & 2 ✅ (proven)
+## Features
 
-The full pipeline works end-to-end against a real debuggee, with a **complete typed view**:
+A working source-level debugger for real Clarion apps (tested against a full multi-module
+ABC application — `School`, 54 modules):
 
-```
-break inside Compute()  ->  typed locals + call stack + typed globals
-LOCIDX int32 = 1→2   LOCSUM int32 = 0→1   PCOUNT int32 = 5      (EBP-relative locals)
-call stack: COMPUTE → _main:21 → [runtime]
-PERSON group = {AGE=42, PERSONNAME='Roberto'}   GBLPRICE decimal = 19.99
-VARRAY int32[4] = [11,22,0,0]   VREAL real8 = 6.28318   VDEC = 12.34   VPDEC = 5.678
-```
+- **Launch & control** — runs the debuggee under the Win32 Debugging API
+  (`CreateProcess(DEBUG_ONLY_THIS_PROCESS)`), ASLR-safe; **Go / Stop** and
+  **Step Over / Into / Out** (F10 / F11 / Shift+F11) at line granularity.
+- **Source-line breakpoints** — click the gutter; they snap to the nearest executable line.
+- **Multi-module** — parses the whole TSWD module table; pick any of the app's `.clw`
+  modules, with source resolution that also finds the Clarion `libsrc` sources.
+- **Searchable Procedures list** — filter across all procedures and click to jump to source.
+- **Call stack with per-frame locals** — click any frame to inspect *its* locals; the
+  selected frame stays put across steps.
+- **Locals & Globals** — full enumeration (incl. threaded ABC procedures via scope-grouping),
+  with **name filters**. Values are readable (strings, numbers, groups, arrays) with a hover
+  tooltip showing the complete value.
+- **Exact types from your `.clw` source** — the Type column shows the type as you declared it
+  (`STRING(80)`, `LONG`, `STRING('asdf {16}')`).
+- **Live refresh** — while the program runs, the selected frame's locals and the globals
+  update in place from process memory (no re-break needed).
+- **Edit values** — right-click / double-click a variable → set a new value (writes to the
+  live process via `WriteProcessMemory`).
+- **WPF UI** — professional dark theme, breakpoint gutter, current-line highlight, output log.
 
-- Launches the debuggee (`CreateProcess(DEBUG_ONLY_THIS_PROCESS)`), uses the **runtime**
-  image base (ASLR-safe).
-- Software breakpoints (`0xCC`) mapped from **source line → address** via the TSWD line table.
-- On hit: rewinds EIP, reads registers (`GetThreadContext`), walks the EBP call stack
-  (runtime frames labeled `[runtime]`), re-arms via single-step; resume / terminate.
-- **Full TSWD type system** (`TSWD_FORMAT.md`): int/uint/float/char, DECIMAL & PDECIMAL
-  (packed BCD), STRING/CSTRING/PSTRING, arrays, and nested GROUPs — all formatted from
-  live process memory.
-- **Typed locals & parameters** read via EBP + frame offset for the procedure in scope.
-- WPF UI (professional dark theme): source view with breakpoint gutter + current-line
-  highlight, Procedures, Call Stack, **Locals** + **Globals** grids (name/type/value),
-  output log.
+Built on the decoded **TSWD** debug format (`TSWD_FORMAT.md`) — no dependency on the
+proprietary `D32` engine.
 
 ## How Clarion debug mode works (reverse-engineered)
 
