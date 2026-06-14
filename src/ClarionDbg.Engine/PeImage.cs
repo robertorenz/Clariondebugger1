@@ -56,6 +56,13 @@ public sealed class PeImage
         return false;
     }
 
+    /// <summary>True if rva is in Clarion's thread-local section (.cwtls) — threaded data.</summary>
+    public bool IsTlsRva(uint rva)
+    {
+        var s = FindSection(".cwtls");
+        return s != null && rva >= s.Rva && rva < s.Rva + Math.Max(s.VSize, s.RawSize);
+    }
+
     /// <summary>Returns the raw bytes of the appended TSWD debug blob, or null if release build.</summary>
     public byte[]? ReadCwDebugBlob()
     {

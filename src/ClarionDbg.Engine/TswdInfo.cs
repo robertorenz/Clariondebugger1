@@ -10,6 +10,8 @@ public sealed class TswdSymbol
     public uint Rva;            // when IsGlobal
     public int FrameOffset;     // when local/param
     public bool IsParam;
+    public int DisplaySize = 4; // bytes to show when the type isn't fully decoded
+    public bool Threaded;       // lives in .cwtls (Clarion thread-local)
 }
 
 public sealed class TswdProc
@@ -173,6 +175,18 @@ public sealed class TswdInfo
         }
         Procs.Sort((a, b) => a.EntryRva.CompareTo(b.EntryRva));
         Globals.Sort((a, b) => a.Rva.CompareTo(b.Rva));
+
+        // infer a display size from the gap to the next global so undecoded types still
+        // show their data; flag thread-local (.cwtls) symbols.
+        for (int i = 0; i < Globals.Count; i++)
+        {
+            var g = Globals[i];
+            g.Threaded = pe.IsTlsRva(g.Rva);
+            int sz = g.Type.Size > 0 ? g.Type.Size : 4;
+            if (g.Type.Kind == TypeKind.Unknown && i + 1 < Globals.Count && Globals[i + 1].Rva > g.Rva)
+                sz = (int)Math.Min(Globals[i + 1].Rva - g.Rva, 512);
+            g.DisplaySize = Math.Max(sz, 1);
+        }
     }
 
     static bool CleanName(string s) =>

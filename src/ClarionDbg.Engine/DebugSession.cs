@@ -174,28 +174,45 @@ public sealed class DebugSession
             ebp = nextEbp;
         }
 
-        // globals (typed)
+        // globals (typed where possible, else raw hex+ascii sized by the next-symbol gap)
         var globals = new List<VarValue>();
-        foreach (var g in _info.Globals.OrderBy(g => g.Rva))
-            globals.Add(ReadVar(g.Name, _base + g.Rva, g.Type));
+        foreach (var g in _info.Globals)
+            globals.Add(ReadVar(g.Name, _base + g.Rva, g.Type, g.DisplaySize, g.Threaded));
 
         // locals of the procedure we stopped in (EBP-relative)
         var locals = new List<VarValue>();
         var proc = _info.ProcContaining(eipRva);
         if (proc != null)
             foreach (var lv in proc.Locals.OrderBy(l => l.FrameOffset))
-                locals.Add(ReadVar(lv.Name, (uint)((long)ctx.Ebp + lv.FrameOffset), lv.Type));
+                locals.Add(ReadVar(lv.Name, (uint)((long)ctx.Ebp + lv.FrameOffset),
+                                   lv.Type, lv.Type.Size > 0 ? lv.Type.Size : 4));
 
         Stopped?.Invoke(new StopInfo(ctx.Eip, loc?.Module, loc?.Line, stack, globals, locals, reason));
     }
 
-    VarValue ReadVar(string name, uint va, ClaType type)
+    VarValue ReadVar(string name, uint va, ClaType type, int size, bool threaded = false)
     {
-        int n = type.Size > 0 ? Math.Clamp(type.Size, 1, 8192) : 4;   // guard against garbage/unknown sizes
+        int n = Math.Clamp(size, 1, 8192);   // guard against garbage sizes
         string disp;
-        try { disp = type.Format(ReadBytes(va, n)); }
+        try
+        {
+            var raw = ReadBytes(va, n);
+            disp = type.Kind == TypeKind.Unknown ? RenderRaw(raw) : type.Format(raw);
+        }
         catch { disp = "<unreadable>"; }
-        return new VarValue(name, va, type.Describe(), disp);
+        if (threaded) disp = "[tls] " + disp;
+        string tn = type.Kind == TypeKind.Unknown ? $"<{n}b>" : type.Describe();
+        return new VarValue(name, va, tn, disp);
+    }
+
+    /// <summary>Show undecoded data as hex with an ASCII gutter so values stay readable.</summary>
+    static string RenderRaw(byte[] b)
+    {
+        int n = Math.Min(b.Length, 48);
+        var hex = new System.Text.StringBuilder();
+        for (int i = 0; i < Math.Min(n, 12); i++) hex.Append(b[i].ToString("X2")).Append(' ');
+        var asc = new string(b.Take(n).Select(x => x >= 32 && x < 127 ? (char)x : '·').ToArray());
+        return $"{hex.ToString().TrimEnd()}   '{asc}'";
     }
 
     string FrameLabel(uint rva, uint absAddr)

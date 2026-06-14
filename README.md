@@ -84,9 +84,14 @@ MSBuild.exe sample/dbgtest/dbgtest.cwproj /p:Configuration=Debug `
 - [x] **Full symbol enumeration via stream scan** — finds every procedure (1221 in the
       School demo vs 67 from the address map) so locals resolve in any procedure, plus all
       global data symbols (VMT noise filtered, frame-offset filter separates locals/globals).
-- [ ] Decode ABC's complex global types (class refs, `&` pointers, FILE/QUEUE/VIEW). Today
-      such globals show name + raw value; scalar/string/group/array/decimal types are full.
-- [ ] Thread-local (`.cwtls`) file buffers (`STU:Record`) need TLS-slot resolution.
+- [x] **Readable values for every global** — fully typed where the type is decoded
+      (scalar/string/group/array/decimal), else size-aware hex + ASCII (size inferred from the
+      next symbol), so e.g. `DEFAULTERRORS`, tooltip tables, scroll data show real text.
+- [ ] Decode ABC's complex global type tree (the `0x03` type-wrapper → class refs, `&`
+      pointers, FILE/QUEUE/VIEW). Today these show as raw hex+ASCII rather than structured.
+- [ ] Live thread-local (`.cwtls`) file buffers (`STU:Record`): `.cwtls` is Clarion-managed
+      (not Windows TLS — TLS data dir is empty), so live per-thread values need ClaRUN's
+      thread-block internals. Currently shown from the image template, flagged `[tls]`.
 - [ ] Stepping: step over / into / out (line granularity).
 - [ ] Per-frame locals (select a stack frame → show its locals using that frame's EBP).
 - [ ] Clarion ROUTINE frame sharing (routines reuse the parent procedure's locals).
