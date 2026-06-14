@@ -105,7 +105,10 @@ MSBuild.exe sample/dbgtest/dbgtest.cwproj /p:Configuration=Debug `
       `ThisWindow.Init`/method and the window-proc locals live a few frames up.
 - [x] **Searchable, click-to-navigate Procedures list** — filter by name, click to open the
       procedure's source ready to set a breakpoint.
-- [ ] Stepping: step over / into / out (line granularity).
+- [x] **Stepping** — step over / into / out at line granularity (F10 / F11 / Shift+F11),
+      via trap-flag single-stepping + the line table; locals re-read at every stop so values
+      update as you step.
+- [ ] Edit-variable-at-runtime (write a new value from the debugger via WriteProcessMemory).
 - [ ] Clarion ROUTINE frame sharing (routines reuse the parent procedure's locals).
 - [ ] Edit-variable-at-runtime (`WriteProcessMemory`), watch expressions, conditional BPs.
 - [ ] STRING/CSTRING/PSTRING distinction; DATE/TIME calendar formatting.
