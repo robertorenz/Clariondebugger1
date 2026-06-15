@@ -110,6 +110,23 @@ public sealed partial class DebugSession
     public void StepOut()  { _act = Act.Out;  _resume.Set(); }
     public void Terminate() { _act = Act.Terminate; _resume.Set(); }
 
+    volatile bool _pauseRequested;
+
+    /// <summary>Interrupt a freely-running debuggee (break into it). Injects a breakpoint via
+    /// DebugBreakProcess; the debug loop catches it and stops on a thread that's in Clarion code.
+    /// Safe to call from the UI thread while the program is running.</summary>
+    public void Pause()
+    {
+        if (_hProcess == IntPtr.Zero) { Log?.Invoke("Pause: no running process."); return; }
+        _pauseRequested = true;
+        if (!Native.DebugBreakProcess(_hProcess))
+        {
+            _pauseRequested = false;
+            Log?.Invoke("Pause failed: DebugBreakProcess error "
+                        + System.Runtime.InteropServices.Marshal.GetLastWin32Error() + ".");
+        }
+    }
+
     void Run()
     {
         if (_attachMode)
@@ -240,6 +257,12 @@ public sealed partial class DebugSession
                 }
                 return Stop(ref ctx, hThread, exAddr);
             }
+            // a breakpoint we didn't plant: our injected pause (DebugBreakProcess), else loader/etc.
+            if (_pauseRequested)
+            {
+                _pauseRequested = false;
+                return HandlePause(tid);
+            }
             return Native.DBG_CONTINUE;   // initial loader breakpoint etc.
         }
 
@@ -256,6 +279,34 @@ public sealed partial class DebugSession
             }
         }
         return Native.DBG_EXCEPTION_NOT_HANDLED;   // let the app's handler run (likely terminates)
+    }
+
+    /// <summary>The injected pause breakpoint arrived (on a throwaway OS thread). Pick a thread that's
+    /// actually in Clarion code and stop there. The whole process is frozen while we hold this event,
+    /// so every thread's context is stable to read.</summary>
+    uint HandlePause(uint breakTid)
+    {
+        uint tid = PickPauseThread(breakTid);
+        var hThread = _threads.TryGetValue(tid, out var h) ? h : _hThread;
+        _stoppedTid = tid;
+        var ctx = GetCtx(hThread);
+        return Stop(ref ctx, hThread, 0, "paused");
+    }
+
+    /// <summary>Prefer a thread whose EIP is in debuggable Clarion code; else the first readable
+    /// thread; else the thread the break landed on.</summary>
+    uint PickPauseThread(uint breakTid)
+    {
+        uint fallback = 0;
+        foreach (var kv in _threads)
+        {
+            if (kv.Key == breakTid) continue;
+            Native.CONTEXT c;
+            try { c = GetCtx(kv.Value); } catch { continue; }
+            if (fallback == 0) fallback = kv.Key;
+            if (IsCode(c.Eip)) return kv.Key;
+        }
+        return fallback != 0 ? fallback : breakTid;
     }
 
     public bool BreakOnException { get; set; } = true;
@@ -284,10 +335,11 @@ public sealed partial class DebugSession
     };
 
     /// <summary>Report the stop to the UI, wait for the next action, and set up the resume.</summary>
-    uint Stop(ref Native.CONTEXT ctx, IntPtr hThread, uint userBpAddr)
+    uint Stop(ref Native.CONTEXT ctx, IntPtr hThread, uint userBpAddr, string? reason = null)
     {
         _stepping = StepKind.None;
-        ReportStop(ctx, userBpAddr != 0 ? "breakpoint" : "step");
+        _pauseRequested = false;   // any stop consumes a pending pause (a breakpoint may have fired first)
+        ReportStop(ctx, reason ?? (userBpAddr != 0 ? "breakpoint" : "step"));
         _resume.WaitOne();
         if (_act == Act.Terminate) { Native.TerminateProcess(_hProcess, 0); return Native.DBG_CONTINUE; }
 

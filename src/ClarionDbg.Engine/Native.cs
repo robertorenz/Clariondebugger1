@@ -85,6 +85,11 @@ internal static class Native
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     public static extern uint GetFinalPathNameByHandle(IntPtr hFile, System.Text.StringBuilder buf, uint cch, uint flags);
 
+    // Inject a breakpoint into the debuggee (on a throwaway OS thread) so a freely-running target
+    // can be interrupted — the break arrives as an EXCEPTION_BREAKPOINT in the debug loop.
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool DebugBreakProcess(IntPtr hProcess);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool DebugActiveProcess(uint pid);
     [DllImport("kernel32.dll", SetLastError = true)]

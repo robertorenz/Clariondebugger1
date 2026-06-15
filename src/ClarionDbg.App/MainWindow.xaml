@@ -22,6 +22,8 @@
                         ToolTip="Attach to a running Clarion process"/>
                 <Border Width="1" Background="{StaticResource Border}" Margin="8,2"/>
                 <Button x:Name="BtnGo" Click="BtnGo_Click" Content="▶  Go  (F5)"/>
+                <Button x:Name="BtnPause" Click="BtnPause_Click" Content="⏸ Pause" IsEnabled="False"
+                        ToolTip="Break into the running program (F6)"/>
                 <Button x:Name="BtnStepOver" Click="BtnStepOver_Click" Content="⤼ Over (F10)" IsEnabled="False"/>
                 <Button x:Name="BtnStepInto" Click="BtnStepInto_Click" Content="⤓ Into (F11)" IsEnabled="False"/>
                 <Button x:Name="BtnStepOut" Click="BtnStepOut_Click" Content="⤒ Out (⇧F11)" IsEnabled="False"/>

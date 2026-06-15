@@ -478,6 +478,13 @@ public partial class MainWindow : Window
         ClearCurrentLine(); SetState(State.Idle); Status("Stopped.");
     }
 
+    void BtnPause_Click(object sender, RoutedEventArgs e)
+    {
+        if (_state != State.Running || _session == null) { Status("Nothing running to pause."); return; }
+        _session.Pause();
+        Status("Pausing…");   // the Stopped event arrives once the target breaks into Clarion code
+    }
+
     void ChkBreakCrash_Changed(object sender, RoutedEventArgs e)
     { if (_session != null) _session.BreakOnException = ChkBreakCrash.IsChecked == true; }
 
@@ -824,6 +831,7 @@ public partial class MainWindow : Window
         _state = s;
         HideDataTip();
         BtnGo.IsEnabled = s != State.Running;
+        BtnPause.IsEnabled = s == State.Running;
         BtnStop.IsEnabled = s != State.Idle;
         BtnStepOver.IsEnabled = BtnStepInto.IsEnabled = BtnStepOut.IsEnabled = s == State.Stopped;
         BtnGo.Content = s == State.Stopped ? "▶  Continue  (F5)" : "▶  Go  (F5)";
@@ -1166,6 +1174,7 @@ public partial class MainWindow : Window
         switch (e.Key)
         {
             case Key.F5: BtnGo_Click(this, new RoutedEventArgs()); e.Handled = true; break;
+            case Key.F6: BtnPause_Click(this, new RoutedEventArgs()); e.Handled = true; break;
             case Key.F10: BtnStepOver_Click(this, new RoutedEventArgs()); e.Handled = true; break;
             case Key.F11 when (Keyboard.Modifiers & ModifierKeys.Shift) != 0:
                 BtnStepOut_Click(this, new RoutedEventArgs()); e.Handled = true; break;
