@@ -22,9 +22,27 @@ public sealed class LoadedModule
     public TswdInfo? Info;        // null for non-debug images (no TSWD blob)
     public bool Preloaded;        // registered ahead of launch (kept on unload) vs runtime-discovered (dropped)
 
+    // ---- THREADed (.cwtls) data: per-thread instance resolution via ClaRUN!THR$GetInstance ----
+    public uint CwtlsLo, CwtlsHi;          // .cwtls section RVA range (0 when the image has no threaded data)
+    public uint ThrGetInstanceIatRva;      // IAT slot RVA of ClaRUN.dll!THR$GetInstance (0 when not imported)
+
     public bool HasDebug => Info != null;
+    public bool HasThreadedData => CwtlsHi != 0 && ThrGetInstanceIatRva != 0;
 
     public bool ContainsVa(uint va) => LoadBase != 0 && va >= LoadBase && va < LoadBase + Size;
+
+    /// <summary>True if <paramref name="va"/> is a threaded (.cwtls) template address in this image.</summary>
+    public bool IsThreadedVa(uint va)
+        => CwtlsHi != 0 && LoadBase != 0 && va >= LoadBase + CwtlsLo && va < LoadBase + CwtlsHi;
+
+    /// <summary>Cache the .cwtls range and the THR$GetInstance IAT slot from the parsed PE.</summary>
+    public void ResolveThreadedInfo()
+    {
+        if (Pe == null) return;
+        var cwtls = Pe.FindSection(".cwtls");
+        if (cwtls != null) { CwtlsLo = cwtls.Rva; CwtlsHi = cwtls.Rva + Math.Max(cwtls.VSize, cwtls.RawSize); }
+        ThrGetInstanceIatRva = Pe.FindImportIatSlotRva("ClaRUN.dll", "THR$GetInstance");
+    }
 
     /// <summary>True if <paramref name="va"/> falls in this image's executable section AND the image
     /// carries debug info — i.e. Clarion code we can resolve and single-step. Non-debug DLLs are

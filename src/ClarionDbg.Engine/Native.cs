@@ -70,6 +70,12 @@ internal static class Native
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool FlushInstructionCache(IntPtr h, IntPtr addr, int size);
 
+    // Suspend / resume other threads during a function-evaluation hijack so only the eval thread runs.
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint SuspendThread(IntPtr hThread);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint ResumeThread(IntPtr hThread);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool GetThreadContext(IntPtr hThread, ref CONTEXT ctx);
     [DllImport("kernel32.dll", SetLastError = true)]

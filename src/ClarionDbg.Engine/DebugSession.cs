@@ -26,7 +26,10 @@ public sealed partial class DebugSession
         public string Where => Label ?? (Module != null || Line != 0 ? $"{Module}:{Line}" : $"0x{Rva:X8}");
     }
     public record Frame(string Proc, uint Addr, string? Module, int? Line, IReadOnlyList<VarValue> Locals);
-    public record VarValue(string Name, uint Addr, string TypeName, string Display, string Full, int Size, WriteKind Kind);
+    public record VarValue(string Name, uint Addr, string TypeName, string Display, string Full, int Size, WriteKind Kind)
+    {
+        public bool Threaded { get; init; }   // lives in .cwtls; Addr is the template — resolve per-thread on demand
+    }
     public record ThreadRef(uint Tid, string Label);
     public record StopInfo(uint Eip, string? Module, int? Line, IReadOnlyList<Frame> Stack,
                            IReadOnlyList<VarValue> Globals, IReadOnlyList<VarValue> Locals,
@@ -53,7 +56,7 @@ public sealed partial class DebugSession
     Thread? _worker;
 
     // ---- stepping ----
-    enum Act { Continue, Into, Over, Out, Terminate }
+    enum Act { Continue, Into, Over, Out, Terminate, Eval }
     volatile Act _act = Act.Continue;
     enum StepKind { None, Into, Over }
     StepKind _stepping = StepKind.None;
@@ -75,6 +78,7 @@ public sealed partial class DebugSession
             Size = pe.SizeOfImage,
             Preloaded = true,
         };
+        _exe.ResolveThreadedInfo();
         _modules.Add(_exe);
         RebuildModSnapshot();
     }
@@ -781,9 +785,9 @@ public sealed partial class DebugSession
             (disp, full, kind) = Render(raw, type);
         }
         catch { disp = full = "<unreadable>"; kind = WriteKind.Raw; }
-        if (threaded) { disp = "[tls] " + disp; full = "(thread-local; shown from image template)\n" + full; }
+        if (threaded) { disp = "[tls] " + disp; full = "(thread-local; template value — right-click ‘Resolve on current thread’ for the live instance)\n" + full; }
         string tn = type.Kind == TypeKind.Unknown ? InferType(kind, n) : type.Describe();
-        return new VarValue(name, va, tn, disp, full, n, kind);
+        return new VarValue(name, va, tn, disp, full, n, kind) { Threaded = threaded };
     }
 
     /// <summary>Best-effort Clarion type for variables whose type record isn't decoded — inferred

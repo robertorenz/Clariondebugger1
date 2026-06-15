@@ -41,6 +41,14 @@ if (bpLine == 0)   // parse-only diagnostic mode
         var loc = info.Locate(p.Rva);
         Console.WriteLine($"   0x{p.Rva:X6} {p.Name,-40} -> {loc?.Module}:{loc?.Line}");
     }
+    Console.WriteLine("\nthreaded-data eval foundation:");
+    var cwtls = pe.FindSection(".cwtls");
+    Console.WriteLine($"   .cwtls section        : {(cwtls != null ? $"rva=0x{cwtls.Rva:X} size=0x{Math.Max(cwtls.VSize, cwtls.RawSize):X}" : "(none)")}");
+    Console.WriteLine($"   ClaRUN!THR$GetInstance: IAT slot rva = 0x{pe.FindImportIatSlotRva("ClaRUN.dll", "THR$GetInstance"):X}");
+    var imports = pe.EnumerateImports().ToList();
+    Console.WriteLine($"   imports parsed        : {imports.Count} ({imports.Select(i => i.Dll).Distinct().Count()} DLLs)");
+    foreach (var i in imports.Take(8)) Console.WriteLine($"        {i.Dll}!{i.Func} @ slot 0x{i.SlotRva:X}");
+
     Console.WriteLine("\nfirst 15 globals (filtered):");
     foreach (var g in info.Globals.Take(15)) Console.WriteLine($"   {g.Name,-24} {g.Type.Describe(),-14} rva=0x{g.Rva:X}");
     Console.WriteLine("\nglobal GROUP/record buffers (decoded members, first 12):");

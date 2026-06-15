@@ -899,7 +899,7 @@ public partial class MainWindow : Window
         return new VarRow
         {
             Name = v.Name, Type = type, Value = disp, Address = $"0x{v.Addr:X8}",
-            Tip = tip, AddrValue = v.Addr, Size = v.Size, Kind = v.Kind
+            Tip = tip, AddrValue = v.Addr, Size = v.Size, Kind = v.Kind, Threaded = v.Threaded
         };
     }
 
@@ -1038,6 +1038,19 @@ public partial class MainWindow : Window
         if (_session == null) { Status("Start debugging first."); return; }
         if (MenuRow(sender) is not { } r || r.AddrValue == 0) { Status("This row has no readable address."); return; }
         new MemoryWindow(_session, r.AddrValue, r.Name) { Owner = this }.Show();
+    }
+
+    void ResolveThreaded_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session == null || _state != State.Stopped) { Status("Resolving threaded data needs a stopped program."); return; }
+        if (MenuRow(sender) is not { } r || r.AddrValue == 0) { Status("This row has no address."); return; }
+        if (!r.Threaded) { Status($"{r.Name} isn't THREADed (.cwtls) data — its value is already the real one."); return; }
+        var v = _session.ResolveThreadedGlobal(r.AddrValue);   // hijacks the stopped thread to call THR$GetInstance
+        if (v == null)
+        { Status($"Couldn't resolve {r.Name} on the current thread (no THR$GetInstance import, or eval failed)."); return; }
+        r.Value = v.Display; r.Tip = v.Full;
+        Log($"{r.Name} on the stopped thread: {v.Display}");
+        Status($"{r.Name} resolved on the stopped thread.");
     }
 
     void ViewArray_Click(object sender, RoutedEventArgs e)
@@ -1250,6 +1263,7 @@ public sealed class VarRow : INotifyPropertyChanged
     public uint AddrValue { get; set; }
     public int Size { get; set; }
     public DebugSession.WriteKind Kind { get; set; }
+    public bool Threaded { get; set; }       // THREADed (.cwtls) data — Value shows the template until resolved per-thread
     public string Expr { get; set; } = "";   // for watch rows: the original expression to re-evaluate
 
     string _value = "", _tip = "", _type = "", _addr = "";

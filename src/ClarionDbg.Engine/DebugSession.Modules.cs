@@ -30,11 +30,13 @@ public sealed partial class DebugSession
             foreach (var m in _modules) if (m.Name == name) return;   // already known
             var pe = PeImage.TryLoad(dllPath);
             var info = pe != null ? TswdInfo.Load(pe) : null;
-            _modules.Add(new LoadedModule
+            var mod = new LoadedModule
             {
                 Path = dllPath, Name = name, Pe = pe, Info = info,
                 Size = pe?.SizeOfImage ?? 0, Preloaded = true,
-            });
+            };
+            mod.ResolveThreadedInfo();
+            _modules.Add(mod);
             RebuildModSnapshot();
         }
     }
@@ -170,6 +172,7 @@ public sealed partial class DebugSession
                         Path = path, Name = name, Pe = pe, Info = info, LoadBase = baseVa,
                         Size = pe?.SizeOfImage ?? ReadRemoteSizeOfImage(baseVa),
                     };
+                    m.ResolveThreadedInfo();
                     _modules.Add(m);
                 }
                 if (m.Size == 0) m.Size = ReadRemoteSizeOfImage(baseVa);
