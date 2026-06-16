@@ -128,12 +128,21 @@ public partial class MainWindow : Window
             CmbModule.ItemsSource = _moduleItems.ToList();
             _suppressModuleEvent = false;
 
-            _allProcs = _images.SelectMany((img, idx) => img.Info.Procedures
-                                   .Select(p => new ProcItem(p.Name, p.Rva, img.Info, img.Name, fromExe: idx == 0)))
-                               .OrderBy(p => p.FromExe ? 0 : 1)                         // EXE procs first
-                               .ThenBy(p => p.Image, StringComparer.OrdinalIgnoreCase)  // then grouped per DLL
-                               .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)   // each group alphabetical
-                               .ToList();
+            var procs = _images.SelectMany((img, idx) => img.Info.Procedures
+                                   .Select(p => new ProcItem(p.Name, p.Rva, img.Info, img.Name,
+                                                             fromExe: idx == 0, project: ProjectOfProc(img.Info, p.Rva))));
+            // Mirror the MODULE dropdown: with a solution, project source floats to the
+            // top grouped by project, then library/runtime grouped by image; otherwise
+            // EXE procs first, grouped per image. (BuildModuleItems populated _projectOfModule.)
+            _allProcs = (_srcResolver != null
+                ? procs.OrderBy(p => p.Project == null ? 1 : 0)
+                       .ThenBy(p => p.Project, StringComparer.OrdinalIgnoreCase)
+                       .ThenBy(p => p.Image, StringComparer.OrdinalIgnoreCase)
+                       .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                : procs.OrderBy(p => p.FromExe ? 0 : 1)
+                       .ThenBy(p => p.Image, StringComparer.OrdinalIgnoreCase)
+                       .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                ).ToList();
             BuildProcCategories();    // populate the kind pulldown (sets _procGroup = null)
             FilterProcs("");
             BuildSourceTypeIndex();   // read declared types from the .clw sources
@@ -234,6 +243,14 @@ public partial class MainWindow : Window
                    .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase);
 
         _moduleItems.AddRange(ordered);
+    }
+
+    /// <summary>The project a procedure belongs to: map its RVA → owning module
+    /// (binary search) → project via the solution's Compile items. Null ⇒ library/runtime.</summary>
+    string? ProjectOfProc(TswdInfo info, uint rva)
+    {
+        var mod = info.Locate(rva)?.Module;
+        return mod != null && _projectOfModule.TryGetValue(mod, out var proj) ? proj : null;
     }
 
     /// <summary>Select a module in the dropdown by name. ModuleItem is a record
@@ -1387,12 +1404,14 @@ public sealed class ProcItem
     public TswdInfo? Info { get; }              // the blob this proc came from (EXE or a DLL); null = EXE
     public string? Image { get; }               // owning image filename, for display
     public bool FromExe { get; }                // true ⇒ from the main EXE (no label); false ⇒ a debug DLL
-    public ProcItem(string name, uint rva, TswdInfo? info = null, string? image = null, bool fromExe = false)
-    { Name = name; Rva = rva; Info = info; Image = image; FromExe = fromExe; Group = GroupOf(name); }
-    // DLL procedures carry their owning image so a big debug DLL's procs are
-    // distinguishable from the program's own (which render bare).
-    public override string ToString() => FromExe
-        ? $"{Name}  @0x{Rva:X}"
+    public string? Project { get; }             // owning project (via module→Compile item); null ⇒ library/runtime
+    public ProcItem(string name, uint rva, TswdInfo? info = null, string? image = null, bool fromExe = false, string? project = null)
+    { Name = name; Rva = rva; Info = info; Image = image; FromExe = fromExe; Project = project; Group = GroupOf(name); }
+    // Your project's procedures render bare and float to the top; library/runtime
+    // procedures from a debug DLL carry their owning image so they're distinguishable.
+    public override string ToString() =>
+        Project != null ? $"{Name}  @0x{Rva:X}"
+        : FromExe ? $"{Name}  @0x{Rva:X}"
         : $"{Name}  @0x{Rva:X}   [{Image}]";
 
     /// <summary>
