@@ -137,6 +137,44 @@ namespace Clarion.SourceResolution
         }
 
         /// <summary>
+        /// Builds a resolver from the solution's persisted
+        /// <see cref="SolutionAssociation"/> sidecar — the reopen path that needs
+        /// no prompts. Resolves the install from the sidecar's explicit
+        /// PropertiesFile (ConfigDir override) if set, else by version name across
+        /// detected installs, else the most recent install. Returns null if there
+        /// is no sidecar or the version can't be resolved (caller then runs the
+        /// first-open handshake).
+        /// </summary>
+        public static ClarionSourceResolver? CreateFromAssociation(string solutionPath)
+        {
+            var assoc = SolutionAssociationStore.Read(solutionPath);
+            if (assoc == null)
+                return null;
+
+            ClarionInstallation? install = null;
+            if (!string.IsNullOrEmpty(assoc.PropertiesFile))
+                install = ClarionInstallationDetector.ParseInstallationFromPropertiesPath(assoc.PropertiesFile!);
+
+            if (install == null && !string.IsNullOrEmpty(assoc.VersionName))
+                install = ClarionInstallationDetector.DetectInstallations()
+                    .FirstOrDefault(i => i.CompilerVersions.Any(v =>
+                        string.Equals(v.Name, assoc.VersionName, StringComparison.OrdinalIgnoreCase)));
+
+            install ??= ClarionInstallationDetector.GetMostRecentInstallation();
+            if (install == null)
+                return null;
+
+            var version = (!string.IsNullOrEmpty(assoc.VersionName)
+                ? install.CompilerVersions.FirstOrDefault(v =>
+                    string.Equals(v.Name, assoc.VersionName, StringComparison.OrdinalIgnoreCase))
+                : null) ?? install.CompilerVersions.FirstOrDefault();
+            if (version == null)
+                return null;
+
+            return Create(solutionPath, version, install.PropertiesPath, assoc.ConfigurationOverride);
+        }
+
+        /// <summary>
         /// Resolves a TSWD module / file name (e.g. "MyProc.clw") to an absolute
         /// path, FileList-first then redirection across projects. Returns null if
         /// nothing resolves.

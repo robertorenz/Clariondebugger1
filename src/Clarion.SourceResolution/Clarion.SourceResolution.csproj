@@ -18,4 +18,12 @@
     <AssemblyName>Clarion.SourceResolution</AssemblyName>
   </PropertyGroup>
 
+  <!-- System.Text.Json: the only NuGet dependency, used for the JSON sidecar
+       (chosen over XML so the schema interops cleanly with the TS extension).
+       It is a first-party System.* package and keeps the no-debugger/WPF/Win32
+       purity intact. -->
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
 </Project>
