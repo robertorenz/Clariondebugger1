@@ -67,6 +67,8 @@ public partial class MainWindow : Window
         _bps.FirstOrDefault(b => b.Label == null && b.Module == module && b.Line == line);
 
     readonly ObservableCollection<SourceLine> _lines = new();
+    BreakpointMargin? _bpMargin;                                   // red-dot gutter + click-to-toggle
+    readonly CurrentLineRenderer _curLineRenderer = new();         // execution-line background band
     readonly ObservableCollection<VarRow> _vars = new();
     readonly ObservableCollection<VarRow> _localsRows = new();
     readonly ObservableCollection<VarRow> _watch = new();
@@ -86,7 +88,14 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        SourceList.ItemsSource = _lines;
+        Editor.TextArea.TextView.LineTransformers.Add(new ClarionColorizer());  // Clarion syntax colouring
+        // breakpoint gutter (left of line numbers), current-line band, and hover-for-value
+        _bpMargin = new BreakpointMargin(line => LineBp(_curModule ?? "", line) != null, ToggleBreak);
+        Editor.TextArea.LeftMargins.Insert(0, _bpMargin);
+        Editor.TextArea.TextView.BackgroundRenderers.Add(_curLineRenderer);
+        Editor.TextArea.TextView.MouseHover += Editor_MouseHover;
+        Editor.TextArea.TextView.MouseHoverStopped += Editor_MouseHoverStopped;
+        ICSharpCode.AvalonEdit.Search.SearchPanel.Install(Editor);   // Ctrl+F find (F3 / Shift+F3 next/prev, Esc closes)
         GridVars.ItemsSource = _vars;
         GridLocals.ItemsSource = _localsRows;
         GridWatch.ItemsSource = _watch;
@@ -282,15 +291,22 @@ public partial class MainWindow : Window
         bool fromDll = img != null && !string.Equals(img, Path.GetFileName(_exePath), StringComparison.OrdinalIgnoreCase);
         TxtSourceName.Text = (src ?? "(source file not found)") + (fromDll ? $"   [{img}]" : "");
         _lines.Clear();
-        if (src == null) { Log($"Source not found for {moduleName} (searched exe dir + Clarion libsrc)."); return; }
+        if (src == null) { Editor.Text = ""; Log($"Source not found for {moduleName} (searched exe dir + Clarion libsrc)."); return; }
+
+        // _lines stays the per-line metadata model (line no. + breakpoint state) used by the
+        // breakpoint margin and current-line renderer; the editor shows the joined text. Tabs
+        // are expanded to 4 spaces so column positions match between the two.
+        var sb = new StringBuilder();
         int n = 1;
         foreach (var line in File.ReadAllLines(src))
         {
-            var sl = new SourceLine { LineNo = n, Text = line.Replace("\t", "    ") };
-            sl.HasBreakpoint = LineBp(moduleName, n) != null;
-            _lines.Add(sl);
+            var t = line.Replace("\t", "    ");
+            _lines.Add(new SourceLine { LineNo = n, Text = t });
+            if (n > 1) sb.Append('\n');
+            sb.Append(t);
             n++;
         }
+        Editor.Text = sb.ToString();
     }
 
     static readonly string[] SourceSearchDirs =
@@ -392,23 +408,16 @@ public partial class MainWindow : Window
     }
 
     // ---------- breakpoints ----------
-    void Gutter_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.Tag is SourceLine sl) ToggleBreak(sl.LineNo);
-    }
-
     void ToggleBreak(int clicked)
     {
         if (_curModule == null || _info == null) return;
         // snap to the nearest line that actually has executable code in this module
         int line = (InfoFor(_curModule) ?? _info).NearestCodeLine(_curModule, clicked) ?? clicked;
-        var sl = _lines.FirstOrDefault(l => l.LineNo == line);
         var existing = LineBp(_curModule, line);
         if (existing != null)
         {
             _bps.Remove(existing);
             _session?.RemoveBreakpointLive(existing);
-            if (sl != null) sl.HasBreakpoint = false;
             Log($"Breakpoint cleared at {_curModule}:{line}.");
         }
         else
@@ -416,17 +425,19 @@ public partial class MainWindow : Window
             var bp = new DebugSession.Breakpoint(_curModule, line);
             _bps.Add(bp);
             _session?.AddBreakpointLive(bp);
-            if (sl != null) sl.HasBreakpoint = true;
             Log(line == clicked
                 ? $"Breakpoint set at {_curModule}:{line}."
                 : $"Breakpoint set at {_curModule}:{line} (no code on line {clicked}; moved to nearest).");
         }
         SaveBreakpoints();
+        _bpMargin?.Refresh();
     }
 
     // ---------- run-to-cursor & break-on-procedure-entry ----------
-    static SourceLine? MenuLine(object sender) =>
-        (sender as FrameworkElement)?.DataContext as SourceLine;
+    // The editor context menu acts on the caret's line (left-click to place the caret,
+    // then use the menu). AvalonEdit's Caret.Line is 1-based, matching SourceLine.LineNo.
+    SourceLine? MenuLine(object sender) =>
+        _lines.FirstOrDefault(x => x.LineNo == Editor.TextArea.Caret.Line);
 
     void RunToCursor_Click(object sender, RoutedEventArgs e)
     {
@@ -481,8 +492,7 @@ public partial class MainWindow : Window
         var win = new BreakpointsWindow(_bps, _session) { Owner = this };
         win.ShowDialog();
         // reflect any gutter changes for the current module after edits/removals
-        if (_curModule != null)
-            foreach (var sl in _lines) sl.HasBreakpoint = LineBp(_curModule, sl.LineNo) != null;
+        _bpMargin?.Refresh();
         SaveBreakpoints();
     }
 
@@ -586,8 +596,7 @@ public partial class MainWindow : Window
         if (info.Line is int line)
         {
             var sl = _lines.FirstOrDefault(x => x.LineNo == line);
-            if (sl != null) { sl.IsCurrent = true; SourceList.UpdateLayout();
-                ((FrameworkElement?)SourceList.ItemContainerGenerator.ContainerFromItem(sl))?.BringIntoView(); }
+            if (sl != null) SetCurrentLine(sl.LineNo);
         }
 
         // thread list — mark the stopped thread, let the user switch to inspect another stack
@@ -650,8 +659,7 @@ public partial class MainWindow : Window
             }
             ClearCurrentLine();
             var sl = _lines.FirstOrDefault(x => x.LineNo == fl);
-            if (sl != null) { sl.IsCurrent = true; SourceList.UpdateLayout();
-                ((FrameworkElement?)SourceList.ItemContainerGenerator.ContainerFromItem(sl))?.BringIntoView(); }
+            if (sl != null) SetCurrentLine(sl.LineNo);
         }
     }
 
@@ -761,11 +769,7 @@ public partial class MainWindow : Window
             ShowModule(l.Module);
         }
         var sl = _lines.FirstOrDefault(x => x.LineNo == l.Line);
-        if (sl != null)
-        {
-            SourceList.UpdateLayout();
-            ((FrameworkElement?)SourceList.ItemContainerGenerator.ContainerFromItem(sl))?.BringIntoView();
-        }
+        if (sl != null) Editor.ScrollToLine(sl.LineNo);
         Status($"{p.Name} → {l.Module}:{l.Line}. Click the gutter there to set a breakpoint.");
     }
 
@@ -773,21 +777,7 @@ public partial class MainWindow : Window
     // A Popup (not a ToolTip) is used deliberately: WPF only shows ToolTips via its own hover
     // timer, so toggling ToolTip.IsOpen from code is unreliable. A Popup shows on demand.
     System.Windows.Controls.Primitives.Popup? _dataPopup;
-    double _srcCharWidth;
     string? _dataTipWord;
-
-    // width of one character in the source font; the source view is monospace (Consolas 13),
-    // so column-under-cursor = mouseX / charWidth is exact.
-    double SourceCharWidth()
-    {
-        if (_srcCharWidth > 0) return _srcCharWidth;
-        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var ft = new System.Windows.Media.FormattedText(new string('0', 20),
-            System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-            new Typeface("Consolas"), 13, Brushes.Black, dpi);
-        _srcCharWidth = ft.WidthIncludingTrailingWhitespace / 20.0;
-        return _srcCharWidth;
-    }
 
     static bool IsIdentChar(char c) => char.IsLetterOrDigit(c) || c is '_' or ':' or '.';
 
@@ -802,17 +792,23 @@ public partial class MainWindow : Window
         return w.Length > 0 && !char.IsDigit(w[0]) ? w : null;
     }
 
-    void SourceText_MouseMove(object sender, MouseEventArgs e)
+    void Editor_MouseHover(object sender, MouseEventArgs e)
     {
-        if (sender is not System.Windows.Controls.TextBlock tb || tb.DataContext is not SourceLine sl)
-        { HideDataTip(); return; }
-
-        var pos = e.GetPosition(tb);
-        int col = (int)(pos.X / SourceCharWidth());
-        var word = WordAt(sl.Text, col);
+        var tvp = Editor.GetPositionFromPoint(e.GetPosition(Editor));
+        if (tvp is not { } p) { HideDataTip(); return; }
+        var lineText = _lines.FirstOrDefault(x => x.LineNo == p.Line)?.Text;
+        if (lineText == null) { HideDataTip(); return; }
+        var word = WordAt(lineText, p.Column - 1);     // TextViewPosition.Column is 1-based
         if (word == null) { HideDataTip(); return; }
-        if (word == _dataTipWord && _dataPopup?.IsOpen == true) return;   // already showing this word
+        if (word == _dataTipWord && _dataPopup?.IsOpen == true) { e.Handled = true; return; }  // already showing this word
+        TryShowDataTip(Editor, e.GetPosition(Editor), word);
+        e.Handled = true;
+    }
 
+    void Editor_MouseHoverStopped(object sender, MouseEventArgs e) => HideDataTip();
+
+    void TryShowDataTip(FrameworkElement anchor, Point at, string word)
+    {
         // 1) live variable value — needs a running/stopped session and the right frame
         if (_session != null && _state != State.Idle)
         {
@@ -828,7 +824,7 @@ public partial class MainWindow : Window
                     body = $"{pretty}   (raw {v.Display})";
                 else if (body.StartsWith("{") && body.EndsWith("}"))   // a GROUP / record — list fields by line
                 { body = FormatGroupMultiline(body); extra = ""; }
-                ShowDataTip(tb, pos, word, type, body, extra);
+                ShowDataTip(anchor, at, word, type, body, extra);
                 return;
             }
         }
@@ -837,7 +833,7 @@ public partial class MainWindow : Window
         if (TryEquate(word, out var evalue, out var efull))
         {
             _dataTipWord = word;
-            ShowDataTip(tb, pos, word, "EQUATE", evalue, efull);
+            ShowDataTip(anchor, at, word, "EQUATE", evalue, efull);
             return;
         }
 
@@ -877,7 +873,6 @@ public partial class MainWindow : Window
         catch { return false; }
     }
 
-    void SourceText_MouseLeave(object sender, MouseEventArgs e) => HideDataTip();
 
     /// <summary>Turn a group dump "{a=1, b='x', sub={c=2}}" into one "a = 1" line per top-level field.</summary>
     static string FormatGroupMultiline(string s)
@@ -906,7 +901,7 @@ public partial class MainWindow : Window
         return sb.ToString();
     }
 
-    void ShowDataTip(System.Windows.Controls.TextBlock anchor, Point at, string name, string type, string value, string full)
+    void ShowDataTip(FrameworkElement anchor, Point at, string name, string type, string value, string full)
     {
         var fg  = (Brush)(TryFindResource("Fg") ?? Brushes.White);
         var dim = (Brush)(TryFindResource("FgDim") ?? Brushes.Gray);
@@ -1007,7 +1002,19 @@ public partial class MainWindow : Window
     }
 
     // ---------- helpers ----------
-    void ClearCurrentLine() { foreach (var l in _lines) if (l.IsCurrent) l.IsCurrent = false; }
+    void SetCurrentLine(int line)
+    {
+        _curLineRenderer.Line = line;
+        Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
+        Editor.ScrollToLine(line);
+    }
+
+    void ClearCurrentLine()
+    {
+        if (_curLineRenderer.Line == null) return;
+        _curLineRenderer.Line = null;
+        Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
+    }
 
     void SetState(State s)
     {
@@ -1375,26 +1382,37 @@ public partial class MainWindow : Window
             case Key.F11 when (Keyboard.Modifiers & ModifierKeys.Shift) != 0:
                 BtnStepOut_Click(this, new RoutedEventArgs()); e.Handled = true; break;
             case Key.F11: BtnStepInto_Click(this, new RoutedEventArgs()); e.Handled = true; break;
+            case Key.G when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                GotoLine(); e.Handled = true; break;
         }
         base.OnKeyDown(e);
     }
+
+    /// <summary>Ctrl+G — prompt for a line number and jump there (caret + scroll).</summary>
+    void GotoLine()
+    {
+        var doc = Editor.Document;
+        if (doc == null || doc.LineCount <= 0) return;
+        int max = doc.LineCount;
+        var dlg = new GotoLineWindow(Editor.TextArea.Caret.Line, max) { Owner = this };
+        if (dlg.ShowDialog() == true && dlg.LineNumber is int n)
+        {
+            n = Math.Clamp(n, 1, max);
+            Editor.CaretOffset = doc.GetLineByNumber(n).Offset;
+            Editor.ScrollToLine(n);
+            Editor.TextArea.Caret.BringCaretToView();
+            Editor.Focus();
+        }
+    }
 }
 
-public sealed class SourceLine : INotifyPropertyChanged
+/// <summary>Per-line metadata for the current module: line number + (tab-expanded) text.
+/// Breakpoint dots and the execution band are drawn by the AvalonEdit margin/renderer,
+/// which read live state — this is just the line-number → text lookup model.</summary>
+public sealed class SourceLine
 {
     public int LineNo { get; set; }
     public string Text { get; set; } = "";
-
-    bool _bp, _cur;
-    public bool HasBreakpoint { get => _bp; set { _bp = value; Raise(nameof(BpVisibility)); } }
-    public bool IsCurrent { get => _cur; set { _cur = value; Raise(nameof(RowBg)); } }
-
-    public Visibility BpVisibility => _bp ? Visibility.Visible : Visibility.Collapsed;
-    public Brush RowBg => _cur ? (Brush)System.Windows.Application.Current.Resources["CurLine"]
-                               : Brushes.Transparent;
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    void Raise(string p) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
 }
 
 public sealed class FrameRow

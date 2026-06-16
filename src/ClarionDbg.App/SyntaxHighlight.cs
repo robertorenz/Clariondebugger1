@@ -1,12 +1,9 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Media;
 
 namespace ClarionDbg.App;
 
 /// <summary>
-/// Attached property that renders a line of Clarion source into colored runs on a TextBlock.
+/// Clarion source tokenizer + colour vocabulary, consumed by <see cref="ClarionColorizer"/>.
 /// The keyword/type/function vocabulary and its precedence mirror the Clarion-Extension TextMate
 /// grammar (msarson/Clarion-Extension, syntaxes/clarion.tmLanguage.json), consolidated into a
 /// professional VS-style palette (no purple). Tokenizing is per line and stateless, so multi-line
@@ -68,23 +65,10 @@ public static class SyntaxHighlight
         return map;
     }
 
-    public static readonly DependencyProperty TextProperty = DependencyProperty.RegisterAttached(
-        "Text", typeof(string), typeof(SyntaxHighlight),
-        new PropertyMetadata(null, OnTextChanged));
-
-    public static void SetText(DependencyObject o, string v) => o.SetValue(TextProperty, v);
-    public static string? GetText(DependencyObject o) => (string?)o.GetValue(TextProperty);
-
-    static void OnTextChanged(DependencyObject o, DependencyPropertyChangedEventArgs e)
-    {
-        if (o is not TextBlock tb) return;
-        tb.Inlines.Clear();
-        var line = e.NewValue as string ?? "";
-        foreach (var (text, brush) in Tokenize(line))
-            tb.Inlines.Add(new Run(text) { Foreground = brush });
-    }
-
-    static IEnumerable<(string, Brush)> Tokenize(string s)
+    /// <summary>Tokenize one line of Clarion source into colored spans. Stateless and
+    /// per-line (multi-line OMIT/COMPILE/strings aren't tracked). Exposed so the AvalonEdit
+    /// colorizer can reuse the exact same vocabulary/precedence as the legacy TextBlock path.</summary>
+    internal static IEnumerable<(string Text, Brush Brush)> Tokenize(string s)
     {
         int i = 0, n = s.Length;
         // a label (or statement) that begins at column 1 with no leading whitespace

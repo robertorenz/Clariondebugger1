@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:ClarionDbg.App"
+        xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
         Title="Clarion Debugger" Height="760" Width="1200"
         Background="{StaticResource Bg}" Foreground="{StaticResource Fg}"
         FontFamily="Segoe UI" WindowStartupLocation="CenterScreen">
@@ -136,41 +137,19 @@
                     <TextBlock x:Name="TxtSourceName" Text="(no source)" Foreground="{StaticResource FgDim}"
                                FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
                 </DockPanel>
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                    <ItemsControl x:Name="SourceList">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="{Binding RowBg}" Tag="{Binding}">
-                                    <Border.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="Run to cursor" Click="RunToCursor_Click"/>
-                                            <MenuItem Header="Set next statement" Click="SetNextStatement_Click"/>
-                                            <MenuItem Header="Toggle breakpoint" Click="ToggleBreakMenu_Click"/>
-                                        </ContextMenu>
-                                    </Border.ContextMenu>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="22"/>
-                                            <ColumnDefinition Width="44"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" Background="Transparent"
-                                                MouseLeftButtonDown="Gutter_Click" Tag="{Binding}">
-                                            <Ellipse Width="11" Height="11" Fill="{StaticResource BpRed}"
-                                                     Visibility="{Binding BpVisibility}"/>
-                                        </Border>
-                                        <TextBlock Grid.Column="1" Text="{Binding LineNo}" Foreground="{StaticResource FgDim}"
-                                                   FontFamily="Consolas" FontSize="13" TextAlignment="Right" Margin="0,0,8,0"/>
-                                        <TextBlock Grid.Column="2" local:SyntaxHighlight.Text="{Binding Text}"
-                                                   Foreground="{StaticResource Fg}" Background="Transparent"
-                                                   FontFamily="Consolas" FontSize="13" TextWrapping="NoWrap"
-                                                   MouseMove="SourceText_MouseMove" MouseLeave="SourceText_MouseLeave"/>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                <avalon:TextEditor x:Name="Editor" Grid.Row="1"
+                                   IsReadOnly="True" ShowLineNumbers="True" WordWrap="False"
+                                   FontFamily="Consolas" FontSize="13"
+                                   Background="{StaticResource Bg}" Foreground="{StaticResource Fg}"
+                                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <avalon:TextEditor.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Run to cursor" Click="RunToCursor_Click"/>
+                            <MenuItem Header="Set next statement" Click="SetNextStatement_Click"/>
+                            <MenuItem Header="Toggle breakpoint" Click="ToggleBreakMenu_Click"/>
+                        </ContextMenu>
+                    </avalon:TextEditor.ContextMenu>
+                </avalon:TextEditor>
             </Grid>
 
             <GridSplitter Grid.Column="3" Width="3" Background="{StaticResource Border}" HorizontalAlignment="Stretch"/>
