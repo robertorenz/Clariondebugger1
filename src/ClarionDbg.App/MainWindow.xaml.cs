@@ -67,6 +67,8 @@ public partial class MainWindow : Window
         _bps.FirstOrDefault(b => b.Label == null && b.Module == module && b.Line == line);
 
     readonly ObservableCollection<SourceLine> _lines = new();
+    BreakpointMargin? _bpMargin;                                   // red-dot gutter + click-to-toggle
+    readonly CurrentLineRenderer _curLineRenderer = new();         // execution-line background band
     readonly ObservableCollection<VarRow> _vars = new();
     readonly ObservableCollection<VarRow> _localsRows = new();
     readonly ObservableCollection<VarRow> _watch = new();
@@ -87,6 +89,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Editor.TextArea.TextView.LineTransformers.Add(new ClarionColorizer());  // Clarion syntax colouring
+        // breakpoint gutter (left of line numbers), current-line band, and hover-for-value
+        _bpMargin = new BreakpointMargin(line => LineBp(_curModule ?? "", line) != null, ToggleBreak);
+        Editor.TextArea.LeftMargins.Insert(0, _bpMargin);
+        Editor.TextArea.TextView.BackgroundRenderers.Add(_curLineRenderer);
+        Editor.TextArea.TextView.MouseHover += Editor_MouseHover;
+        Editor.TextArea.TextView.MouseHoverStopped += Editor_MouseHoverStopped;
         GridVars.ItemsSource = _vars;
         GridLocals.ItemsSource = _localsRows;
         GridWatch.ItemsSource = _watch;
@@ -401,11 +409,6 @@ public partial class MainWindow : Window
     }
 
     // ---------- breakpoints ----------
-    void Gutter_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.Tag is SourceLine sl) ToggleBreak(sl.LineNo);
-    }
-
     void ToggleBreak(int clicked)
     {
         if (_curModule == null || _info == null) return;
@@ -431,6 +434,7 @@ public partial class MainWindow : Window
                 : $"Breakpoint set at {_curModule}:{line} (no code on line {clicked}; moved to nearest).");
         }
         SaveBreakpoints();
+        _bpMargin?.Refresh();
     }
 
     // ---------- run-to-cursor & break-on-procedure-entry ----------
@@ -494,6 +498,7 @@ public partial class MainWindow : Window
         // reflect any gutter changes for the current module after edits/removals
         if (_curModule != null)
             foreach (var sl in _lines) sl.HasBreakpoint = LineBp(_curModule, sl.LineNo) != null;
+        _bpMargin?.Refresh();
         SaveBreakpoints();
     }
 
@@ -597,7 +602,7 @@ public partial class MainWindow : Window
         if (info.Line is int line)
         {
             var sl = _lines.FirstOrDefault(x => x.LineNo == line);
-            if (sl != null) { sl.IsCurrent = true; Editor.ScrollToLine(sl.LineNo); }
+            if (sl != null) SetCurrentLine(sl.LineNo);
         }
 
         // thread list — mark the stopped thread, let the user switch to inspect another stack
@@ -660,7 +665,7 @@ public partial class MainWindow : Window
             }
             ClearCurrentLine();
             var sl = _lines.FirstOrDefault(x => x.LineNo == fl);
-            if (sl != null) { sl.IsCurrent = true; Editor.ScrollToLine(sl.LineNo); }
+            if (sl != null) SetCurrentLine(sl.LineNo);
         }
     }
 
@@ -807,17 +812,23 @@ public partial class MainWindow : Window
         return w.Length > 0 && !char.IsDigit(w[0]) ? w : null;
     }
 
-    void SourceText_MouseMove(object sender, MouseEventArgs e)
+    void Editor_MouseHover(object sender, MouseEventArgs e)
     {
-        if (sender is not System.Windows.Controls.TextBlock tb || tb.DataContext is not SourceLine sl)
-        { HideDataTip(); return; }
-
-        var pos = e.GetPosition(tb);
-        int col = (int)(pos.X / SourceCharWidth());
-        var word = WordAt(sl.Text, col);
+        var tvp = Editor.GetPositionFromPoint(e.GetPosition(Editor));
+        if (tvp is not { } p) { HideDataTip(); return; }
+        var lineText = _lines.FirstOrDefault(x => x.LineNo == p.Line)?.Text;
+        if (lineText == null) { HideDataTip(); return; }
+        var word = WordAt(lineText, p.Column - 1);     // TextViewPosition.Column is 1-based
         if (word == null) { HideDataTip(); return; }
-        if (word == _dataTipWord && _dataPopup?.IsOpen == true) return;   // already showing this word
+        if (word == _dataTipWord && _dataPopup?.IsOpen == true) { e.Handled = true; return; }  // already showing this word
+        TryShowDataTip(Editor, e.GetPosition(Editor), word);
+        e.Handled = true;
+    }
 
+    void Editor_MouseHoverStopped(object sender, MouseEventArgs e) => HideDataTip();
+
+    void TryShowDataTip(FrameworkElement anchor, Point at, string word)
+    {
         // 1) live variable value — needs a running/stopped session and the right frame
         if (_session != null && _state != State.Idle)
         {
@@ -833,7 +844,7 @@ public partial class MainWindow : Window
                     body = $"{pretty}   (raw {v.Display})";
                 else if (body.StartsWith("{") && body.EndsWith("}"))   // a GROUP / record — list fields by line
                 { body = FormatGroupMultiline(body); extra = ""; }
-                ShowDataTip(tb, pos, word, type, body, extra);
+                ShowDataTip(anchor, at, word, type, body, extra);
                 return;
             }
         }
@@ -842,7 +853,7 @@ public partial class MainWindow : Window
         if (TryEquate(word, out var evalue, out var efull))
         {
             _dataTipWord = word;
-            ShowDataTip(tb, pos, word, "EQUATE", evalue, efull);
+            ShowDataTip(anchor, at, word, "EQUATE", evalue, efull);
             return;
         }
 
@@ -882,7 +893,6 @@ public partial class MainWindow : Window
         catch { return false; }
     }
 
-    void SourceText_MouseLeave(object sender, MouseEventArgs e) => HideDataTip();
 
     /// <summary>Turn a group dump "{a=1, b='x', sub={c=2}}" into one "a = 1" line per top-level field.</summary>
     static string FormatGroupMultiline(string s)
@@ -911,7 +921,7 @@ public partial class MainWindow : Window
         return sb.ToString();
     }
 
-    void ShowDataTip(System.Windows.Controls.TextBlock anchor, Point at, string name, string type, string value, string full)
+    void ShowDataTip(FrameworkElement anchor, Point at, string name, string type, string value, string full)
     {
         var fg  = (Brush)(TryFindResource("Fg") ?? Brushes.White);
         var dim = (Brush)(TryFindResource("FgDim") ?? Brushes.Gray);
@@ -1012,7 +1022,19 @@ public partial class MainWindow : Window
     }
 
     // ---------- helpers ----------
-    void ClearCurrentLine() { foreach (var l in _lines) if (l.IsCurrent) l.IsCurrent = false; }
+    void SetCurrentLine(int line)
+    {
+        _curLineRenderer.Line = line;
+        Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
+        Editor.ScrollToLine(line);
+    }
+
+    void ClearCurrentLine()
+    {
+        if (_curLineRenderer.Line == null) return;
+        _curLineRenderer.Line = null;
+        Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
+    }
 
     void SetState(State s)
     {
