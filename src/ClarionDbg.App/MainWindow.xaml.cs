@@ -118,9 +118,12 @@ public partial class MainWindow : Window
             CmbModule.ItemsSource = _moduleItems.ToList();
             _suppressModuleEvent = false;
 
-            _allProcs = _images.SelectMany(img => img.Info.Procedures
-                                   .Select(p => new ProcItem(p.Name, p.Rva, img.Info, img.Name)))
-                               .OrderBy(p => p.Name).ToList();
+            _allProcs = _images.SelectMany((img, idx) => img.Info.Procedures
+                                   .Select(p => new ProcItem(p.Name, p.Rva, img.Info, img.Name, fromExe: idx == 0)))
+                               .OrderBy(p => p.FromExe ? 0 : 1)                         // EXE procs first
+                               .ThenBy(p => p.Image, StringComparer.OrdinalIgnoreCase)  // then grouped per DLL
+                               .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)   // each group alphabetical
+                               .ToList();
             BuildProcCategories();    // populate the kind pulldown (sets _procGroup = null)
             FilterProcs("");
             BuildSourceTypeIndex();   // read declared types from the .clw sources
@@ -1344,9 +1347,14 @@ public sealed class ProcItem
     public string Group { get; }                // App, Runtime, or the owning class name (THISWINDOW, BROWSECLASS, …)
     public TswdInfo? Info { get; }              // the blob this proc came from (EXE or a DLL); null = EXE
     public string? Image { get; }               // owning image filename, for display
-    public ProcItem(string name, uint rva, TswdInfo? info = null, string? image = null)
-    { Name = name; Rva = rva; Info = info; Image = image; Group = GroupOf(name); }
-    public override string ToString() => $"{Name}  @0x{Rva:X}";
+    public bool FromExe { get; }                // true ⇒ from the main EXE (no label); false ⇒ a debug DLL
+    public ProcItem(string name, uint rva, TswdInfo? info = null, string? image = null, bool fromExe = false)
+    { Name = name; Rva = rva; Info = info; Image = image; FromExe = fromExe; Group = GroupOf(name); }
+    // DLL procedures carry their owning image so a big debug DLL's procs are
+    // distinguishable from the program's own (which render bare).
+    public override string ToString() => FromExe
+        ? $"{Name}  @0x{Rva:X}"
+        : $"{Name}  @0x{Rva:X}   [{Image}]";
 
     /// <summary>
     /// The procedure's group: <see cref="App"/> for a free procedure (NAME@F with no class, e.g.
