@@ -37,18 +37,68 @@ public partial class LinkSolutionWindow : Window
         CmbConfig.ItemsSource = new[] { AutoConfig, "Debug", "Release" };
         CmbConfig.SelectedIndex = 0;
 
-        var choices = ClarionInstallationDetector.DetectInstallations()
-            .SelectMany(i => i.CompilerVersions.Select(v => new VersionChoice(i, v)))
-            .ToList();
-        CmbVersion.ItemsSource = choices;
-        if (choices.Count > 0)
-            CmbVersion.SelectedIndex = 0;            // most recent install first
+        ReloadVersions();
+    }
+
+    /// <summary>Populate the version list. With a Properties override set, parse that
+    /// explicit ClarionProperties.xml (non-default ConfigDir); otherwise use the default
+    /// AppData detection. Most recent version is preselected.</summary>
+    void ReloadVersions()
+    {
+        var overridePath = TxtProps.Text.Trim();
+        List<VersionChoice> choices;
+
+        if (overridePath.Length > 0)
+        {
+            var install = File.Exists(overridePath)
+                ? ClarionInstallationDetector.ParseInstallationFromPropertiesPath(overridePath)
+                : null;
+            if (install == null)
+            {
+                CmbVersion.ItemsSource = null;
+                TxtNote.Text = "Couldn't read versions from that ClarionProperties.xml.";
+                BtnSave.IsEnabled = false;
+                return;
+            }
+            choices = install.CompilerVersions.Select(v => new VersionChoice(install, v)).ToList();
+        }
         else
         {
-            TxtNote.Text = "No Clarion installation detected. Skip to use the legacy source search.";
+            choices = ClarionInstallationDetector.DetectInstallations()
+                .SelectMany(i => i.CompilerVersions.Select(v => new VersionChoice(i, v)))
+                .ToList();
+        }
+
+        CmbVersion.ItemsSource = choices;
+        if (choices.Count > 0)
+        {
+            CmbVersion.SelectedIndex = 0;            // most recent install first
+            TxtNote.Text = "";
+            BtnSave.IsEnabled = true;
+        }
+        else
+        {
+            TxtNote.Text = overridePath.Length > 0
+                ? "That ClarionProperties.xml lists no usable versions."
+                : "No Clarion installation detected. Skip to use the legacy source search.";
             BtnSave.IsEnabled = false;
         }
     }
+
+    void BrowseProps_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Filter = "ClarionProperties.xml|ClarionProperties.xml|XML files (*.xml)|*.xml|All files (*.*)|*.*"
+        };
+        if (!string.IsNullOrEmpty(TxtProps.Text))
+        {
+            try { dlg.InitialDirectory = Path.GetDirectoryName(TxtProps.Text); } catch { }
+        }
+        if (dlg.ShowDialog() == true) { TxtProps.Text = dlg.FileName; ReloadVersions(); }
+    }
+
+    void TxtProps_LostFocus(object sender, RoutedEventArgs e) => ReloadVersions();
 
     void BrowseSln_Click(object sender, RoutedEventArgs e)
     {
@@ -69,15 +119,20 @@ public partial class LinkSolutionWindow : Window
         var cfg = CmbConfig.SelectedItem as string;
         var configOverride = string.Equals(cfg, AutoConfig) ? null : cfg;
 
+        // When a Properties override is set, the chosen install was parsed from it,
+        // so its PropertiesPath already points at the override file. Persist that path
+        // in the sidecar only for the override case; default installs stay null so
+        // reopen re-detects by version name from AppData.
+        var overridePath = TxtProps.Text.Trim();
+        bool usingOverride = overridePath.Length > 0;
+
         SolutionPath = sln;
         Version = choice.Version;
         PropertiesFile = choice.Install.PropertiesPath;
         Association = new SolutionAssociation
         {
             VersionName = choice.Version.Name,
-            // PropertiesFile stays null unless overriding a non-default location;
-            // the install's own PropertiesPath is used to build the resolver.
-            PropertiesFile = null,
+            PropertiesFile = usingOverride ? overridePath : null,
             ConfigurationOverride = configOverride,
             ExePath = _exePath,
         };
