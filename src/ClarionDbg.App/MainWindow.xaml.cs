@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using ClarionDbg.Engine;
+using Clarion.SourceResolution;
 using Microsoft.Win32;
 
 namespace ClarionDbg.App;
@@ -21,6 +22,11 @@ public partial class MainWindow : Window
     State _state = State.Idle;
     string? _exePath;
     string? _curModule;
+
+    // Redirection/FileList-aware source resolution (Clarion.SourceResolution).
+    // Null when the EXE has no associated solution — we then fall back to the
+    // legacy directory search in ResolveSource.
+    ClarionSourceResolver? _srcResolver;
 
     // ---- multi-DLL: the EXE plus any sibling Clarion debug DLLs, and the source-module catalog ----
     sealed record LoadedImage(string Path, string Name, PeImage Pe, TswdInfo Info);
@@ -98,6 +104,7 @@ public partial class MainWindow : Window
             if (_info == null) { Log("No .cwdebug info — this EXE was not built in Debug mode (vid=full)."); return; }
 
             DiscoverImages(path);     // EXE + sibling Clarion debug DLLs -> _images / _modOwners / _moduleNames
+            InitSourceResolver(path); // redirection/FileList source resolution if an associated .sln is found
 
             _suppressModuleEvent = true;
             CmbModule.ItemsSource = _moduleNames.ToList();
@@ -190,8 +197,71 @@ public partial class MainWindow : Window
         @"C:\Clarion12\accessory\libsrc\win"
     };
 
+    /// <summary>Locate a .sln to drive redirection/FileList resolution: the EXE's
+    /// own directory first, then one above (the common project\bin\app.exe layout).</summary>
+    static string? FindSolutionFor(string exePath)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(exePath));
+        foreach (var d in new[] { dir, Path.GetDirectoryName(dir) })
+        {
+            if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) continue;
+            var slns = Directory.GetFiles(d, "*.sln");
+            if (slns.Length > 0) return slns[0];
+        }
+        return null;
+    }
+
+    /// <summary>Build the source resolver for this EXE: prefer a saved per-solution
+    /// association; otherwise auto-build (in memory, not persisted) from the most
+    /// recent installed Clarion version. Leaves <see cref="_srcResolver"/> null when
+    /// no .sln or no install is found, so ResolveSource falls back to the dir search.</summary>
+    void InitSourceResolver(string exePath)
+    {
+        _srcResolver = null;
+        try
+        {
+            var sln = FindSolutionFor(exePath);
+            if (sln == null) { Log("No .sln near the EXE — using legacy source search."); return; }
+
+            var resolver = ClarionSourceResolver.CreateFromAssociation(sln);
+            if (resolver == null)
+            {
+                // No saved association yet — auto-pick the most recent install so
+                // resolution works now. Not persisted: a deliberate version choice
+                // (and sidecar write) belongs to a future first-open dialog.
+                var install = ClarionInstallationDetector.GetMostRecentInstallation();
+                var version = install?.CompilerVersions.FirstOrDefault();
+                if (install != null && version != null)
+                {
+                    resolver = ClarionSourceResolver.Create(sln, version, install.PropertiesPath);
+                    Log($"No saved association for {Path.GetFileName(sln)} — auto-using {version.Name} (not saved).");
+                }
+                else
+                {
+                    Log("No Clarion installation detected — using legacy source search.");
+                    return;
+                }
+            }
+
+            _srcResolver = resolver;
+            Log($"Source resolver: {Path.GetFileName(sln)} · {resolver.Version.Name} · config {resolver.Configuration} · {resolver.FileListCount} indexed file(s).");
+        }
+        catch (Exception ex)
+        {
+            Log("Source resolver init skipped: " + ex.Message);
+        }
+    }
+
     string? ResolveSource(string moduleName)
     {
+        // Preferred: redirection/FileList resolution via the associated solution.
+        if (_srcResolver != null)
+        {
+            var hit = _srcResolver.Resolve(moduleName);
+            if (hit != null && File.Exists(hit)) return hit;
+        }
+
+        // Fallback: the legacy directory search (EXE dir, parent, hardcoded libsrc).
         var dirs = new List<string>();
         if (_exePath != null)
         {
