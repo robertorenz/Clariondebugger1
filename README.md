@@ -28,11 +28,22 @@ A working source-level debugger for real Clarion apps (tested against a full mul
 ABC application — `School`, 54 modules):
 
 - **Launch & control** — runs the debuggee under the Win32 Debugging API
-  (`CreateProcess(DEBUG_ONLY_THIS_PROCESS)`), ASLR-safe; **Go / Stop** and
+  (`CreateProcess(DEBUG_ONLY_THIS_PROCESS)`), ASLR-safe; **Go / Stop**,
+  **Pause** (F6 — break into a freely-running program), and
   **Step Over / Into / Out** (F10 / F11 / Shift+F11) at line granularity.
 - **Source-line breakpoints** — click the gutter; they snap to the nearest executable line.
 - **Multi-module** — parses the whole TSWD module table; pick any of the app's `.clw`
   modules, with source resolution that also finds the Clarion `libsrc` sources.
+- **Multi-DLL debugging** — debugs across the EXE *and* its loaded Clarion debug DLLs as one
+  program: load/unload events are tracked at runtime and every image's modules, procedures, and
+  symbols are merged into a single catalog (modules and procedures are grouped/labelled by owning
+  image, with the project's own source floated to the top).
+- **IDE-accurate source resolution** — finds the exact `.clw`/`.inc`/`.equ` sources the way the
+  Clarion IDE does: reads redirection (`.red`) files, `.sln`/`.cwproj` solutions and their file
+  lists, `FileList.xml`, IDE preferences, and detects installed Clarion versions. A **Link
+  Solution** dialog binds a debugged EXE to its Clarion solution + version (`ConfigDir` /
+  `ClarionProperties.xml` override), remembered per solution, so the right project sources load
+  instead of just the shipped `libsrc`.
 - **Searchable Procedures list** — filter across all procedures (text + a "kind" pulldown:
   your global procedures, ThisWindow/Report local methods, or any specific class's methods)
   and click to jump to source.
@@ -88,7 +99,8 @@ ABC application — `School`, 54 modules):
   the TSWD member records (see `TSWD_FORMAT.md`).
 - **Break on crash** — automatically stops at the faulting instruction on a GPF / access
   violation, divide-by-zero, stack overflow, illegal instruction, etc. (toggle "Break on crash"),
-  so you can inspect the call stack and variables before the app dies.
+  so you can inspect the call stack and variables before the app dies. Breaks on the *second
+  chance* only, so the app's own exception handlers still get first crack at handled exceptions.
 - **Thread list & switching** — a thread picker shows every live thread and where each is
   executing; switch threads to walk another thread's call stack (and its per-frame locals)
   while stopped.
@@ -164,13 +176,15 @@ MSBuild.exe sample/dbgtest/dbgtest.cwproj /p:Configuration=Debug `
       declarations (label-at-col-1), scoped per module; falls back to a size/content-inferred
       Clarion type (`STRING(n)`/`LONG`/`BYTE`/`REAL`) when the source isn't found. This
       sidesteps the undecoded ABC binary type tree entirely for display purposes.
-- [ ] Decode ABC's binary global type tree (the `0x03` wrapper) — only needed where source
-      is unavailable; the source-based types cover the normal case.
+- [x] Decode ABC's record/group/queue layouts (the `0x03` wrapper → `0x0c` member records
+      grouped by a shared scope ref) → field name + offset for FILE records, GROUPs, and browse
+      QUEUEs; element size inferred from offset gaps. See `TSWD_FORMAT.md`.
 - [x] **Disassembly view** (Iced x86 decoder), **Clarion syntax highlighting** in the source
       view, and an **array (DIM) viewer** that lists elements by address.
-- [ ] **Dictionary-driven file-buffer decode** (`STU:Record` field-by-field) — still blocked: it
-      needs a `.dct` parser *and* ClaRUN's thread-block internals to locate the live buffer (see
-      the `.cwtls` note below). The raw buffer is viewable via the memory/hex window today.
+- [x] **File-buffer decode** (`STU:Record` field-by-field) — solved without a `.dct` parser:
+      the record buffer is a fixed global (`STUDENTS$STU:RECORD`) and its fields come from the
+      TSWD member records, so `STU:LastName`, `MAJ:Number`, etc. resolve to `base + offset` and
+      show live values (hover, watch, conditions). Browse-queue fields resolve via `BRW1.Q.*`.
 - [ ] Live thread-local (`.cwtls`) file buffers (`STU:Record`): `.cwtls` is Clarion-managed
       (not Windows TLS — TLS data dir is empty), so live per-thread values need ClaRUN's
       thread-block internals. Currently shown from the image template, flagged `[tls]`.
@@ -215,8 +229,15 @@ MSBuild.exe sample/dbgtest/dbgtest.cwproj /p:Configuration=Debug `
 - [x] **Thread list + switching** — live thread picker (marks the stopped thread, shows each
       thread's current procedure); switch to walk any thread's call stack and per-frame locals
       (safe because all threads are suspended while stopped).
-- [ ] Disassembly + memory windows.
-- [ ] DLL debug info (`.cwdebug` in DLLs), multi-module programs.
+- [x] Disassembly + memory windows.
+- [x] **Multi-DLL debugging** — debug across the EXE and its loaded Clarion debug DLLs as one
+      program (runtime load/unload tracking; merged module/procedure/symbol catalog).
+- [x] **IDE-accurate source resolution** — `.red` redirection, `.sln`/`.cwproj` + file lists,
+      `FileList.xml`, installed-version detection, and a Link-Solution binding dialog
+      (`Clarion.SourceResolution`, with a unit-test suite).
+- [x] **Hover data tips** — variable values, EQUATE constants, and FILE/GROUP/QUEUE record
+      fields (`STU:LastName`, `MAJ:Number`, `BRW1.Q.STU:LastName`) in the source view.
+- [x] **Identify thread by window** and **Pause** (F6) to break into a running program.
 ```
 
 ## License
