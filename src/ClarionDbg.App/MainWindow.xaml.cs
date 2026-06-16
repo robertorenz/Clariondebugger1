@@ -42,6 +42,9 @@ public partial class MainWindow : Window
     /// their owning image (e.g. "ABERROR.CLW   [SchoolData.dll]").</summary>
     sealed record ModuleItem(string Name, string Image, bool FromExe, string? Project = null)
     {
+        /// <summary>The group header this item sits under: its project, else the library bucket.</summary>
+        public string GroupLabel => Project ?? "Library / runtime";
+
         public override string ToString() =>
             Project != null ? Name                      // your project source: clean, floated to top
             : FromExe ? Name                            // library compiled into the EXE: no redundant label
@@ -125,7 +128,7 @@ public partial class MainWindow : Window
             BuildModuleItems();       // dropdown items; project source floated to top (needs the resolver's solution)
 
             _suppressModuleEvent = true;
-            CmbModule.ItemsSource = _moduleItems.ToList();
+            CmbModule.ItemsSource = GroupedBy(_moduleItems.ToList(), nameof(ModuleItem.GroupLabel));
             _suppressModuleEvent = false;
 
             var procs = _images.SelectMany((img, idx) => img.Info.Procedures
@@ -243,6 +246,16 @@ public partial class MainWindow : Window
                    .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase);
 
         _moduleItems.AddRange(ordered);
+    }
+
+    /// <summary>Wrap a list in a view grouped by a property, so the ComboBox/ListBox
+    /// renders a non-selectable header per group (project, then "Library / runtime").
+    /// Source order is preserved, so groups appear in our project-first ordering.</summary>
+    static System.ComponentModel.ICollectionView GroupedBy(System.Collections.IEnumerable source, string property)
+    {
+        var cvs = new System.Windows.Data.CollectionViewSource { Source = source };
+        cvs.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(property));
+        return cvs.View;
     }
 
     /// <summary>The project a procedure belongs to: map its RVA → owning module
@@ -687,7 +700,7 @@ public partial class MainWindow : Window
             };
         if (!string.IsNullOrWhiteSpace(text))
             items = items.Where(p => p.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
-        LstProcs.ItemsSource = items.Take(1000).ToList();
+        LstProcs.ItemsSource = GroupedBy(items.Take(1000).ToList(), nameof(ProcItem.GroupLabel));
     }
 
     void TxtProcFilter_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -1409,6 +1422,9 @@ public sealed class ProcItem
     { Name = name; Rva = rva; Info = info; Image = image; FromExe = fromExe; Project = project; Group = GroupOf(name); }
     // Your project's procedures render bare and float to the top; library/runtime
     // procedures from a debug DLL carry their owning image so they're distinguishable.
+    /// <summary>The group header this procedure sits under: its project, else the library bucket.</summary>
+    public string GroupLabel => Project ?? "Library / runtime";
+
     public override string ToString() =>
         Project != null ? $"{Name}  @0x{Rva:X}"
         : FromExe ? $"{Name}  @0x{Rva:X}"

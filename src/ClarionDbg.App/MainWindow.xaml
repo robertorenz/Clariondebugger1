@@ -81,6 +81,18 @@
                                 <MenuItem Header="Break on procedure entry" Click="BreakOnProcEntry_Click"/>
                             </ContextMenu>
                         </ListBox.ContextMenu>
+                        <ListBox.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Margin="0,4,0,1">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontFamily="Segoe UI"
+                                                       FontSize="11" Foreground="{StaticResource Accent}" Margin="2,1,0,2"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </ListBox.GroupStyle>
                     </ListBox>
                 </DockPanel>
                 <DockPanel Grid.Row="1">
@@ -107,7 +119,20 @@
                     <TextBlock DockPanel.Dock="Left" Text="MODULE" Foreground="{StaticResource FgDim}"
                                FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <ComboBox x:Name="CmbModule" Width="220" DockPanel.Dock="Left" FontFamily="Consolas"
-                              FontSize="12" SelectionChanged="CmbModule_SelectionChanged"/>
+                              FontSize="12" SelectionChanged="CmbModule_SelectionChanged">
+                        <ComboBox.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Margin="0,3,0,1">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontFamily="Segoe UI"
+                                                       FontSize="11" Foreground="{StaticResource Accent}" Margin="2,1,0,2"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </ComboBox.GroupStyle>
+                    </ComboBox>
                     <TextBlock x:Name="TxtSourceName" Text="(no source)" Foreground="{StaticResource FgDim}"
                                FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
                 </DockPanel>
