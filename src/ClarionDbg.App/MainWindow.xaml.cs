@@ -69,6 +69,8 @@ public partial class MainWindow : Window
     readonly ObservableCollection<SourceLine> _lines = new();
     BreakpointMargin? _bpMargin;                                   // red-dot gutter + click-to-toggle
     readonly CurrentLineRenderer _curLineRenderer = new();         // execution-line background band
+    readonly Dictionary<string, double> _viewOffset = new(StringComparer.OrdinalIgnoreCase);  // module -> last scroll offset, restored on reopen
+    bool _suppressViewRestore;   // set when a stop scrolls to the exec line, so a pending scroll-restore is skipped
     readonly ObservableCollection<VarRow> _vars = new();
     readonly ObservableCollection<VarRow> _localsRows = new();
     readonly ObservableCollection<VarRow> _watch = new();
@@ -124,6 +126,7 @@ public partial class MainWindow : Window
 
     void LoadExe(string path, bool interactive = false)
     {
+        CaptureViewPosition(); SaveViewState();   // persist the outgoing EXE's view positions before switching
         try
         {
             _exePath = path;
@@ -165,6 +168,7 @@ public partial class MainWindow : Window
 
             AddRecent(path);
             LoadBreakpoints();   // restore saved breakpoints for this EXE
+            LoadViewState();     // restore last source position per module
 
             // show the program's primary module
             string primary = !string.IsNullOrEmpty(_info.SourceFile) ? _info.SourceFile : _moduleNames.FirstOrDefault() ?? "";
@@ -285,6 +289,7 @@ public partial class MainWindow : Window
 
     void ShowModule(string moduleName)
     {
+        CaptureViewPosition();          // remember where we were in the outgoing module
         _curModule = moduleName;
         string? src = ResolveSource(moduleName);
         string? img = _modOwners.TryGetValue(moduleName, out var ms) ? ms.Image : null;
@@ -307,6 +312,30 @@ public partial class MainWindow : Window
             n++;
         }
         Editor.Text = sb.ToString();
+        RestoreViewPosition(moduleName);   // land where the user last was (the exec line, if stopped, scrolls over this)
+    }
+
+    /// <summary>Remember the vertical scroll offset of the module currently shown. Uses the
+    /// scroll position (not the caret) because browsing is usually by scrolling, and the caret
+    /// doesn't move when you scroll.</summary>
+    void CaptureViewPosition()
+    {
+        if (_curModule != null && Editor.Document is { LineCount: > 0 })
+            _viewOffset[_curModule] = Editor.VerticalOffset;
+    }
+
+    /// <summary>Restore the saved scroll offset for a module. Deferred to after the editor has
+    /// laid out the new text (scrolling synchronously right after a Text change clamps to 0). If a
+    /// stop scrolls to the execution line in the meantime, <see cref="_suppressViewRestore"/>
+    /// cancels the pending restore so the exec line wins.</summary>
+    void RestoreViewPosition(string moduleName)
+    {
+        if (!_viewOffset.TryGetValue(moduleName, out var off) || off <= 0) return;
+        _suppressViewRestore = false;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!_suppressViewRestore) Editor.ScrollToVerticalOffset(off);
+        }), System.Windows.Threading.DispatcherPriority.Background);
     }
 
     static readonly string[] SourceSearchDirs =
@@ -514,8 +543,11 @@ public partial class MainWindow : Window
         var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                                "ClarionDbg", "breakpoints");
         Directory.CreateDirectory(dir);
+        // Stable per-EXE key. Do NOT use string.GetHashCode() — .NET randomizes it per
+        // process, so the filename differed on every launch and saved breakpoints were
+        // never found again. SlnHash.Compute is a deterministic hash of the path.
         string key = Path.GetFileNameWithoutExtension(_exePath ?? "x") + "_" +
-                     (uint)(_exePath ?? "").ToLowerInvariant().GetHashCode();
+                     SlnHash.Compute(_exePath ?? "");
         return Path.Combine(dir, key + ".json");
     }
 
@@ -549,6 +581,36 @@ public partial class MainWindow : Window
                     Condition = d.Condition, HitCondition = d.HitCondition, LogMessage = d.LogMessage, Label = d.Label
                 });
             if (_bps.Count > 0) Log($"Restored {_bps.Count} saved breakpoint(s).");
+        }
+        catch { /* ignore corrupt store */ }
+    }
+
+    // ---------- per-EXE source view position (module -> last caret line) ----------
+    string ViewStateStorePath()
+    {
+        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                               "ClarionDbg", "viewstate");
+        Directory.CreateDirectory(dir);
+        string key = Path.GetFileNameWithoutExtension(_exePath ?? "x") + "_" + SlnHash.Compute(_exePath ?? "");
+        return Path.Combine(dir, key + ".json");
+    }
+
+    void SaveViewState()
+    {
+        if (_exePath == null || _viewOffset.Count == 0) return;
+        try { File.WriteAllText(ViewStateStorePath(), System.Text.Json.JsonSerializer.Serialize(_viewOffset)); }
+        catch { /* best effort */ }
+    }
+
+    void LoadViewState()
+    {
+        _viewOffset.Clear();
+        try
+        {
+            var path = ViewStateStorePath();
+            if (!File.Exists(path)) return;
+            var d = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, double>>(File.ReadAllText(path));
+            if (d != null) foreach (var kv in d) _viewOffset[kv.Key] = kv.Value;
         }
         catch { /* ignore corrupt store */ }
     }
@@ -1004,6 +1066,7 @@ public partial class MainWindow : Window
     // ---------- helpers ----------
     void SetCurrentLine(int line)
     {
+        _suppressViewRestore = true;   // exec line wins over any pending scroll-restore
         _curLineRenderer.Line = line;
         Editor.TextArea.TextView.InvalidateLayer(ICSharpCode.AvalonEdit.Rendering.KnownLayer.Background);
         Editor.ScrollToLine(line);
@@ -1371,6 +1434,12 @@ public partial class MainWindow : Window
 
     void Log(string s) { TxtLog.AppendText(s + "\n"); TxtLog.ScrollToEnd(); }
     void Status(string s) => TxtStatus.Text = s;
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        CaptureViewPosition(); SaveViewState();   // persist source positions on exit
+        base.OnClosing(e);
+    }
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
