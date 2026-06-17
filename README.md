@@ -68,7 +68,9 @@ ABC application — `School`, 54 modules):
   - **Break on procedure entry** — right-click any procedure → stop when it's entered.
   - **Breakpoint manager** — a window to enable/disable, edit conditions / hit counts /
     tracepoint logs, see hit counts, and remove breakpoints; all editable live while running.
-  - **Persistence** — breakpoints are saved per-EXE and restored next time you open it.
+  - **Persistence** — debugger state is saved per-EXE and restored next time you open it:
+    breakpoints (with conditions/hit counts/tracepoints) and the last source position you were
+    viewing, so you pick up where you left off across restarts.
 - **Disassembly view** — an x86 disassembly window (powered by Iced) at the current instruction
   pointer, with byte columns, source-line annotations, and the current instruction highlighted;
   navigate to any address, auto-follows the IP.
