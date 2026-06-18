@@ -1,5 +1,20 @@
 using ClarionDbg.Engine;
 
+// exports <pe> [filter]  — dump the PE export table (for the Library State getter port).
+// Works on any PE (e.g. ClaRUN.dll), not just TSWD debug builds.
+if (args.Length >= 2 && args[0].Equals("exports", StringComparison.OrdinalIgnoreCase))
+{
+    var epe = new PeImage(args[1]);
+    string? filter = args.Length > 2 ? args[2] : null;
+    var exps = epe.Exports;
+    Console.WriteLine($"{args[1]}");
+    Console.WriteLine($"exports   : {exps.Count}");
+    foreach (var kv in exps.OrderBy(k => k.Value)
+                 .Where(k => filter == null || k.Key.Contains(filter, StringComparison.OrdinalIgnoreCase)))
+        Console.WriteLine($"   0x{kv.Value:X6}  {kv.Key}");
+    return;
+}
+
 string exe = args.Length > 0 ? args[0] : @"C:\ai\debuger\sample\dbgtest\dbgtest_dbg.exe";
 int bpLine = args.Length > 1 ? int.Parse(args[1]) : 21;
 
