@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Threading;
 using ClarionDbg.Engine;
 
 namespace ClarionDbg.App;
@@ -19,12 +20,14 @@ public partial class LibraryStateWindow : Window
         Loaded += (_, _) => RefreshNow();
     }
 
-    /// <summary>The debugger has stopped. We deliberately do NOT auto-read here: each read hijacks the
-    /// stopped thread to call ~22 runtime getters, and doing that on every break in a tight ACCEPT loop
-    /// starves the message pump and can stall the runtime. Reading is manual (the Refresh button), so the
-    /// user pulls a point-in-time snapshot when they want one. Just mark the panel stale.</summary>
+    /// <summary>The debugger has stopped — auto-refresh the snapshot, but DEFER it. The engine fires its
+    /// stop event on the worker thread via Dispatcher.Invoke, so the worker is still inside that handler
+    /// and has not yet parked in its wait loop; reading getters synchronously now would deadlock. Background
+    /// priority runs after the stop handler returns and the worker is ready. (The read is on the UI thread,
+    /// which naturally serialises it before any Continue — and the batch never calls back to the UI, so the
+    /// earlier worker↔UI deadlock can't recur.)</summary>
     public void OnDebuggerStopped()
-        => TxtStatus.Text = "Stopped — click Refresh to read the current RTL state.";
+        => Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RefreshNow));
 
     /// <summary>The debugger resumed — drop the stale snapshot; the getters must not run while the
     /// program is free.</summary>
