@@ -25,6 +25,11 @@ internal static class Native
     // x86 CONTEXT flags
     public const uint CONTEXT_I386 = 0x00010000;
     public const uint CONTEXT_FULL = CONTEXT_I386 | 0x1 | 0x2 | 0x4; // control|integer|segments
+    public const uint CONTEXT_FLOATING_POINT = CONTEXT_I386 | 0x8;   // x87 FPU (FLOATING_SAVE_AREA)
+    public const uint CONTEXT_EXTENDED_REGISTERS = CONTEXT_I386 | 0x20; // SSE/XMM (ExtendedRegisters)
+    // Everything we must save/restore around a function-eval hijack: a getter may clobber the FPU/SSE
+    // state, and the Clarion RTL relies on it (DECIMAL/REAL math) — leaving it drifted crashes the RTL.
+    public const uint CONTEXT_ALL = CONTEXT_FULL | CONTEXT_FLOATING_POINT | CONTEXT_EXTENDED_REGISTERS;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct STARTUPINFO { public uint cb; public IntPtr lpReserved, lpDesktop, lpTitle;

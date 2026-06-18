@@ -104,7 +104,11 @@ public sealed partial class DebugSession
         try
         {
             if (!_threads.TryGetValue(tid, out var hThread)) hThread = stoppedThread;
-            var saved = GetCtx(hThread);
+            // Capture the FULL context — incl. x87 FPU + SSE — so each getter's restore rolls back any
+            // FP-register drift. CONTEXT_FULL alone (integer/control/segments) leaves the FPU clobbered,
+            // which accumulates over getter calls and crashes the RTL's FP math (0x6BEF5E4C in TakeEvent).
+            var saved = new Native.CONTEXT { ContextFlags = Native.CONTEXT_ALL };
+            Native.GetThreadContext(hThread, ref saved);
 
             // suspend every OTHER thread so the nested pump only ever sees our eval thread's events
             foreach (var kv in _threads)
