@@ -42,17 +42,17 @@ public partial class LibraryStateWindow : Window
         var s = _session();
         if (s == null) { Grid.ItemsSource = null; TxtStatus.Text = "Not debugging."; return; }
 
-        // PROTOTYPE: the safe memory-read path (EVENT/THREAD/ERRORCODE) — reads the RTL's TLS-backed
-        // per-thread block directly, no getter calls, so it can't crash the runtime even inside TakeEvent.
-        var (items, err) = s.ReadLibraryStateMem();
+        // The safe path: every value is EMULATED read-only (no getter calls / no RTL re-entrancy), so it
+        // can't crash the runtime even inside TakeEvent.
+        var (items, err) = s.ReadLibraryStateEmu();
         if (err != null) { Grid.ItemsSource = null; TxtStatus.Text = err; return; }
 
         var rows = items.Select(it => new LibRow
         {
-            Group = "RTL state (live memory)",
+            Group = it.Group,
             Name = it.Name,
-            Value = it.Value,
-            Ok = it.Resolved,
+            Value = it.Ok ? Pretty(it) : "<unavailable>",
+            Ok = it.Ok,
         }).ToList();
 
         var view = new ListCollectionView(rows);

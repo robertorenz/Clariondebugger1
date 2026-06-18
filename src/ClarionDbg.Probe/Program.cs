@@ -190,6 +190,37 @@ sess.Stopped += info2 =>
         Console.WriteLine($">>> SetNextStatement -> line {snLine}: {ok}");
     }
 
+    if (Environment.GetEnvironmentVariable("CLARIONDBG_LIBEMU") == "1")
+    {
+        var pairs = new (string Name, string Export)[]
+        {
+            ("EVENT","Cla$EVENT"), ("ACCEPTED","Cla$ACCEPTED"), ("FIELD","Cla$FIELD"), ("FOCUS","Cla$FOCUS"),
+            ("FIRSTFIELD","Cla$FIRSTFIELD"), ("LASTFIELD","Cla$LASTFIELD"), ("KEYCODE","Cla$KEYCODE"),
+            ("KEYCHAR","Cla$KEYCHAR"), ("KEYSTATE","Cla$KEYSTATE"), ("THREAD","Cla$THREAD"),
+            ("RUNCODE","Cla$RUNCODE"), ("REJECTCODE","Cla$REJECTCODE"), ("SELECTED","Cla$SELECTED"),
+            ("GETEXITCODE","Cla$GETEXITCODE"), ("ERRORCODE","Cla$ERRORCODE"),
+        };
+        var (full, _) = sess.ReadLibraryStateEmu();
+        Console.WriteLine("[emu-full] " + string.Join(" ", full.Select(it => $"{it.Name}={it.Value}")));
+        var emu = pairs.ToDictionary(p => p.Name, p => sess.EmulateGetter(p.Export));
+        new Thread(() =>
+        {
+            Thread.Sleep(150);
+            var (g, gerr) = sess.ReadLibraryState();   // getters = ground truth
+            var truth = gerr != null ? new() : g.ToDictionary(x => x.Name, x => x.Value);
+            Console.WriteLine("\n=== emulated vs getter (ground truth) ===");
+            foreach (var (name, _) in pairs)
+            {
+                string e = emu[name] is uint v ? ((int)v).ToString() : "<unsupported>";
+                truth.TryGetValue(name, out var t);
+                string mark = (t != null && t.StartsWith(e)) || e == t ? "OK" : "DIFF";
+                Console.WriteLine($"   {name,-12} emu={e,-12} getter={t,-12} {(e == "<unsupported>" ? "" : mark)}");
+            }
+            sess.Terminate();
+        }).Start();
+        return;
+    }
+
     if (Environment.GetEnvironmentVariable("CLARIONDBG_LIBMEM") == "1")
     {
         // Memory-read path runs inline (pure ReadProcessMemory, no worker/hijack needed).
