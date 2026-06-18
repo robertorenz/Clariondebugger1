@@ -15,6 +15,25 @@ if (args.Length >= 2 && args[0].Equals("exports", StringComparison.OrdinalIgnore
     return;
 }
 
+// imports <pe> [filter]  — dump the PE import table. Used to confirm an EXE is DLL-linked against
+// the Clarion runtime (imports ClaRUN.dll) vs locally linked (RTL baked in — no clarun import).
+if (args.Length >= 2 && args[0].Equals("imports", StringComparison.OrdinalIgnoreCase))
+{
+    var ipe = new PeImage(args[1]);
+    string? filter = args.Length > 2 ? args[2] : null;
+    var imps = ipe.EnumerateImports()
+        .Where(i => filter == null || i.Dll.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                                   || i.Func.Contains(filter, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    Console.WriteLine($"{args[1]}");
+    Console.WriteLine($"imports   : {imps.Count} ({imps.Select(i => i.Dll).Distinct().Count()} DLLs)");
+    bool clarun = ipe.EnumerateImports().Any(i => i.Dll.Contains("ClaRUN", StringComparison.OrdinalIgnoreCase));
+    Console.WriteLine($"DLL-linked: {(clarun ? "YES (imports ClaRUN.dll — Library State available)" : "no (locally linked — Library State unavailable)")}");
+    foreach (var i in imps.OrderBy(i => i.Dll).ThenBy(i => i.Func))
+        Console.WriteLine($"   {i.Dll}!{i.Func} @ slot 0x{i.SlotRva:X}");
+    return;
+}
+
 string exe = args.Length > 0 ? args[0] : @"C:\ai\debuger\sample\dbgtest\dbgtest_dbg.exe";
 int bpLine = args.Length > 1 ? int.Parse(args[1]) : 21;
 
