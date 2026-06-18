@@ -161,6 +161,24 @@ sess.Stopped += info2 =>
         Console.WriteLine($">>> SetNextStatement -> line {snLine}: {ok}");
     }
 
+    if (Environment.GetEnvironmentVariable("CLARIONDBG_LIBSTATE") == "1")
+    {
+        Environment.SetEnvironmentVariable("CLARIONDBG_LIBSTATE", null);   // once
+        // Run off-thread: ReadLibraryState marshals to the parked worker (as the UI thread would).
+        // Returning here without resuming lets the worker park in Stop() so the eval can run.
+        new Thread(() =>
+        {
+            Thread.Sleep(200);   // let the worker reach Stop()'s wait loop and arm _canEval
+            var (items, err) = sess.ReadLibraryState();
+            Console.WriteLine("\n=== Library State ===");
+            if (err != null) Console.WriteLine("   error: " + err);
+            else foreach (var it in items)
+                Console.WriteLine($"   [{it.Group}] {it.Name,-13} = {(it.Ok ? it.Value : "<unavailable>")}");
+            sess.Terminate();
+        }).Start();
+        return;
+    }
+
     int stepsLeft = int.TryParse(Environment.GetEnvironmentVariable("CLARIONDBG_STEPS"), out var sc) ? sc : 0;
     string kind = Environment.GetEnvironmentVariable("CLARIONDBG_STEPKIND") ?? "into";
     if (stepsLeft > 0 && stepCounter < stepsLeft)

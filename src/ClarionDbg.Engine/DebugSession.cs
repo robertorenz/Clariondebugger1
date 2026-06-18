@@ -56,7 +56,7 @@ public sealed partial class DebugSession
     Thread? _worker;
 
     // ---- stepping ----
-    enum Act { Continue, Into, Over, Out, Terminate, Eval }
+    enum Act { Continue, Into, Over, Out, Terminate, Eval, LibState }
     volatile Act _act = Act.Continue;
     enum StepKind { None, Into, Over }
     StepKind _stepping = StepKind.None;
@@ -360,8 +360,9 @@ public sealed partial class DebugSession
         while (true)
         {
             _resume.WaitOne();
-            if (_act != Act.Eval) break;
-            DoFuncEval(hThread);
+            if (_act == Act.Eval) { DoFuncEval(hThread); continue; }
+            if (_act == Act.LibState) { DoLibState(hThread); continue; }
+            break;
         }
         _canEval = false;
         if (_act == Act.Terminate) { Native.TerminateProcess(_hProcess, 0); return Native.DBG_CONTINUE; }
