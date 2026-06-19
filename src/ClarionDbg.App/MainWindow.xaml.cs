@@ -509,6 +509,17 @@ public partial class MainWindow : Window
         Status($"Will break when {p.Name} is entered.");
     }
 
+    LibraryStateWindow? _libStateWin;
+
+    void BtnLibState_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session == null) { Status("Start debugging first."); return; }
+        if (_libStateWin != null) { _libStateWin.Activate(); return; }
+        _libStateWin = new LibraryStateWindow(() => _session) { Owner = this };
+        _libStateWin.Closed += (_, _) => _libStateWin = null;
+        _libStateWin.Show();
+    }
+
     void BtnDisasm_Click(object sender, RoutedEventArgs e)
     {
         if (_session == null) { Status("Start debugging first."); return; }
@@ -676,6 +687,8 @@ public partial class MainWindow : Window
         foreach (var v in info.Globals) _vars.Add(ToRow(v, null));
 
         RefreshWatch(LstStack.SelectedIndex < 0 ? 0 : LstStack.SelectedIndex);
+
+        _libStateWin?.OnDebuggerStopped();   // deferred refresh (worker must park before getters run)
 
         Status($"Stopped at line {info.Line}. Press Go to continue.");
     });
@@ -1089,6 +1102,7 @@ public partial class MainWindow : Window
         BtnStepOver.IsEnabled = BtnStepInto.IsEnabled = BtnStepOut.IsEnabled = s == State.Stopped;
         BtnGo.Content = s == State.Stopped ? "▶  Continue  (F5)" : "▶  Go  (F5)";
         if (s == State.Running) _liveTimer.Start(); else _liveTimer.Stop();   // live value refresh
+        if (s == State.Running) _libStateWin?.OnDebuggerResumed();   // drop the stale RTL snapshot
     }
 
     /// <summary>While running, re-read the selected frame's locals + globals from live memory so

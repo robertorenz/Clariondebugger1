@@ -360,8 +360,8 @@ public sealed partial class DebugSession
         while (true)
         {
             _resume.WaitOne();
-            if (_act != Act.Eval) break;
-            DoFuncEval(hThread);
+            if (_act == Act.Eval) { DoFuncEval(hThread); continue; }
+            break;
         }
         _canEval = false;
         if (_act == Act.Terminate) { Native.TerminateProcess(_hProcess, 0); return Native.DBG_CONTINUE; }

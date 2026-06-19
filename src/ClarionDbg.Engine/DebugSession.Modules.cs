@@ -53,6 +53,29 @@ public sealed partial class DebugSession
         return null;
     }
 
+    LoadedModule? _runtimeModule;   // cached: the Clarion RTL image (ClaRUN.dll), found by export presence
+
+    /// <summary>The loaded Clarion runtime module (ClaRUN.dll), identified by the presence of the
+    /// <c>Cla$EVENT</c> export rather than by file name (version/rename proof). Used by Library State,
+    /// which reads per-thread RTL values by calling the runtime's <c>Cla$*</c> getter exports.
+    /// <para>Returns null when the app is <b>locally linked</b> — the RTL is baked into the EXE and no
+    /// clarun.dll maps — in which case Library State is unavailable and callers should report that.</para>
+    /// Resolved once and cached; the runtime image does not unload during a session.</summary>
+    LoadedModule? RuntimeModule()
+    {
+        var cached = _runtimeModule;
+        if (cached != null && cached.LoadBase != 0 && Array.IndexOf(_mods, cached) >= 0)
+            return cached;
+        foreach (var m in _mods)
+            if (m.LoadBase != 0 && m.Pe != null && m.Pe.FindExportRva("Cla$EVENT") != 0)
+                return _runtimeModule = m;
+        return _runtimeModule = null;
+    }
+
+    /// <summary>True if a Clarion runtime DLL (ClaRUN.dll) is mapped — i.e. Library State can run.
+    /// False for a locally-linked EXE. Call while the debuggee is loaded/stopped.</summary>
+    public bool HasClarionRuntime => RuntimeModule() != null;
+
     /// <summary>True if <paramref name="va"/> is Clarion code we can resolve and single-step
     /// (in a debug module's .text). Non-debug DLLs and the runtime return false so stepping runs
     /// them at full speed — this matches the old EXE-only <c>_pe.IsCodeRva</c> semantics.</summary>

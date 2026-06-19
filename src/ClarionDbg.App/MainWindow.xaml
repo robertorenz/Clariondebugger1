@@ -34,6 +34,8 @@
                         ToolTip="Manage breakpoints: enable/disable, conditions, hit counts, tracepoints"/>
                 <Button x:Name="BtnDisasm" Click="BtnDisasm_Click" Content="⟨/⟩ Disassembly"
                         ToolTip="Show disassembly at the current instruction pointer"/>
+                <Button x:Name="BtnLibState" Click="BtnLibState_Click" Content="🛈 Library State"
+                        ToolTip="Show the stopped thread's RTL state (ERROR, EVENT, THREAD, TODAY…) — calls the ClaRUN getters on that thread"/>
                 <ToggleButton x:Name="BtnPickThread" Click="BtnPickThread_Click" Content="🎯 Identify thread"
                               Foreground="{StaticResource Fg}" VerticalAlignment="Center" Margin="4,0"
                               ToolTip="Toggle on, then move the mouse over the running program's window to see which thread owns it (selects that thread when stopped)"/>

@@ -14,6 +14,9 @@ public sealed class PeImage
     public IReadOnlyList<Section> Sections { get; }
 
     readonly uint _importDirRva;
+    readonly uint _exportDirRva;
+    readonly uint _exportDirSize;
+    Dictionary<string, uint>? _exports;   // export name -> function RVA (built lazily)
 
     public PeImage(string path)
     {
@@ -26,7 +29,13 @@ public sealed class PeImage
         EntryRva = BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan(opt + 16));
         PreferredBase = BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan(opt + 28)); // ImageBase (PE32)
         SizeOfImage = BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan(opt + 56));   // SizeOfImage (PE32)
-        // data directory [1] = import table {VirtualAddress, Size}; array starts at opt+96 (PE32)
+        // data directory array starts at opt+96 (PE32); each entry is {VirtualAddress, Size} (8 bytes).
+        // [0] = export table, [1] = import table.
+        if (opt + 96 + 8 <= Raw.Length)
+        {
+            _exportDirRva = BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan(opt + 96 + 0));
+            _exportDirSize = BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan(opt + 96 + 4));
+        }
         if (opt + 96 + 12 <= Raw.Length)
             _importDirRva = BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan(opt + 96 + 8));
         int sectbl = opt + optSize;
@@ -161,6 +170,49 @@ public sealed class PeImage
             }
         }
         return 0;
+    }
+
+    /// <summary>RVA of an exported function by name (e.g. ClaRUN.dll!Cla$EVENT), or 0 if not exported.
+    /// At runtime the function's live VA is loadBase+rva. Forwarded exports are skipped (return 0).</summary>
+    public uint FindExportRva(string name)
+        => BuildExports().TryGetValue(name, out var rva) ? rva : 0;
+
+    /// <summary>All named exports as name -> function RVA. Used to detect the Clarion runtime module
+    /// by export presence rather than file name. Empty for images with no export table.</summary>
+    public IReadOnlyDictionary<string, uint> Exports => BuildExports();
+
+    Dictionary<string, uint> BuildExports()
+    {
+        if (_exports != null) return _exports;
+        var map = new Dictionary<string, uint>(StringComparer.Ordinal);
+        try
+        {
+            long eo = _exportDirRva != 0 ? RvaToOffset(_exportDirRva) : -1;
+            if (eo >= 0)
+            {
+                // IMAGE_EXPORT_DIRECTORY: +24 NumberOfNames, +28 AddressOfFunctions,
+                // +32 AddressOfNames, +36 AddressOfNameOrdinals.
+                uint nNames = BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan((int)eo + 24));
+                long funcs = RvaToOffset(BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan((int)eo + 28)));
+                long names = RvaToOffset(BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan((int)eo + 32)));
+                long ords  = RvaToOffset(BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan((int)eo + 36)));
+                if (funcs >= 0 && names >= 0 && ords >= 0)
+                    for (uint i = 0; i < nNames; i++)
+                    {
+                        if (names + i * 4 + 4 > Raw.Length || ords + i * 2 + 2 > Raw.Length) break;
+                        long nOff = RvaToOffset(BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan((int)names + (int)i * 4)));
+                        if (nOff < 0) continue;
+                        ushort ord = BinaryPrimitives.ReadUInt16LittleEndian(Raw.AsSpan((int)ords + (int)i * 2));
+                        if (funcs + ord * 4 + 4 > Raw.Length) continue;
+                        uint fRva = BinaryPrimitives.ReadUInt32LittleEndian(Raw.AsSpan((int)funcs + ord * 4));
+                        // Forwarded export (points back inside the export dir) — not callable code; skip.
+                        if (fRva >= _exportDirRva && fRva < _exportDirRva + _exportDirSize) continue;
+                        map[ReadAsciiZ((int)nOff)] = fRva;
+                    }
+            }
+        }
+        catch { }
+        return _exports = map;
     }
 
     /// <summary>Returns the raw bytes of the appended TSWD debug blob, or null if release build.</summary>

@@ -1,5 +1,68 @@
 using ClarionDbg.Engine;
 
+// exports <pe> [filter]  — dump the PE export table (for the Library State getter port).
+// Works on any PE (e.g. ClaRUN.dll), not just TSWD debug builds.
+if (args.Length >= 2 && args[0].Equals("exports", StringComparison.OrdinalIgnoreCase))
+{
+    var epe = new PeImage(args[1]);
+    string? filter = args.Length > 2 ? args[2] : null;
+    var exps = epe.Exports;
+    Console.WriteLine($"{args[1]}");
+    Console.WriteLine($"exports   : {exps.Count}");
+    foreach (var kv in exps.OrderBy(k => k.Value)
+                 .Where(k => filter == null || k.Key.Contains(filter, StringComparison.OrdinalIgnoreCase)))
+        Console.WriteLine($"   0x{kv.Value:X6}  {kv.Key}");
+    return;
+}
+
+// imports <pe> [filter]  — dump the PE import table. Used to confirm an EXE is DLL-linked against
+// the Clarion runtime (imports ClaRUN.dll) vs locally linked (RTL baked in — no clarun import).
+if (args.Length >= 2 && args[0].Equals("imports", StringComparison.OrdinalIgnoreCase))
+{
+    var ipe = new PeImage(args[1]);
+    string? filter = args.Length > 2 ? args[2] : null;
+    var imps = ipe.EnumerateImports()
+        .Where(i => filter == null || i.Dll.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                                   || i.Func.Contains(filter, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    Console.WriteLine($"{args[1]}");
+    Console.WriteLine($"imports   : {imps.Count} ({imps.Select(i => i.Dll).Distinct().Count()} DLLs)");
+    bool clarun = ipe.EnumerateImports().Any(i => i.Dll.Contains("ClaRUN", StringComparison.OrdinalIgnoreCase));
+    Console.WriteLine($"DLL-linked: {(clarun ? "YES (imports ClaRUN.dll — Library State available)" : "no (locally linked — Library State unavailable)")}");
+    foreach (var i in imps.OrderBy(i => i.Dll).ThenBy(i => i.Func))
+        Console.WriteLine($"   {i.Dll}!{i.Func} @ slot 0x{i.SlotRva:X}");
+    return;
+}
+
+// disasmexport <pe> <ExportName>  — statically disassemble a named export (to inspect getter bodies).
+if (args.Length >= 3 && args[0].Equals("disasmexport", StringComparison.OrdinalIgnoreCase))
+{
+    var dpe = new PeImage(args[1]);
+    uint rva = args[2].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+        ? Convert.ToUInt32(args[2], 16)
+        : dpe.FindExportRva(args[2]);
+    if (rva == 0) { Console.WriteLine($"export {args[2]} not found"); return; }
+    int n = args.Length > 3 && int.TryParse(args[3], out var cnt) ? cnt : 12;
+    bool stopAtRet = args.Length <= 3;   // when an explicit count is given, don't stop early
+    long off = dpe.RvaToOffset(rva);
+    var code = dpe.Raw.AsSpan((int)off, n * 8 + 16).ToArray();
+    var reader = new Iced.Intel.ByteArrayCodeReader(code);
+    var decoder = Iced.Intel.Decoder.Create(32, reader);
+    decoder.IP = rva;
+    var fmt = new Iced.Intel.NasmFormatter();
+    var so = new Iced.Intel.StringOutput();
+    Console.WriteLine($"{args[2]} @ RVA 0x{rva:X}");
+    for (int i = 0; i < n && reader.CanReadByte; i++)
+    {
+        var insn = decoder.Decode();
+        if (insn.IsInvalid) break;
+        so.Reset(); fmt.Format(insn, so);
+        Console.WriteLine($"  0x{(uint)insn.IP:X6}  {so.ToStringAndReset()}");
+        if (stopAtRet && insn.Mnemonic == Iced.Intel.Mnemonic.Ret) break;
+    }
+    return;
+}
+
 string exe = args.Length > 0 ? args[0] : @"C:\ai\debuger\sample\dbgtest\dbgtest_dbg.exe";
 int bpLine = args.Length > 1 ? int.Parse(args[1]) : 21;
 
@@ -125,6 +188,17 @@ sess.Stopped += info2 =>
         Environment.SetEnvironmentVariable("CLARIONDBG_SETNEXT", null);   // clear first: ReportStop re-enters this handler
         bool ok = sess.SetNextStatement(info2.Module ?? "", snLine);
         Console.WriteLine($">>> SetNextStatement -> line {snLine}: {ok}");
+    }
+
+    if (Environment.GetEnvironmentVariable("CLARIONDBG_LIBEMU") == "1")
+    {
+        // Dump the emulated Library State (read-only; safe to call inline here while stopped).
+        var (items, err) = sess.ReadLibraryStateEmu();
+        Console.WriteLine("\n=== Library State (emulated) ===");
+        if (err != null) Console.WriteLine("   error: " + err);
+        else foreach (var it in items) Console.WriteLine($"   [{it.Group}] {it.Name,-13} = {(it.Ok ? it.Value : "<unavailable>")}");
+        sess.Terminate();
+        return;
     }
 
     int stepsLeft = int.TryParse(Environment.GetEnvironmentVariable("CLARIONDBG_STEPS"), out var sc) ? sc : 0;
