@@ -123,6 +123,7 @@ public sealed class TswdInfo
         // records, validated against the PE layout. This finds every procedure across all
         // modules (the address map only surfaces a fraction).
         info.ScanSymbols(pe);
+        info.Procs.Sort((a, b) => a.EntryRva.CompareTo(b.EntryRva));
         return info;
     }
 

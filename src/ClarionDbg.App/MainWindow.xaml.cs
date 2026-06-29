@@ -759,9 +759,10 @@ public partial class MainWindow : Window
         if (_state != State.Stopped || _session == null) return;
         ClearCurrentLine(); step(); SetState(State.Running); Status(what + "…");
     }
-    void BtnStepOver_Click(object sender, RoutedEventArgs e) => Step(_session!.StepOver, "Step over");
-    void BtnStepInto_Click(object sender, RoutedEventArgs e) => Step(_session!.StepInto, "Step into");
-    void BtnStepOut_Click(object sender, RoutedEventArgs e) => Step(_session!.StepOut, "Step out");
+    void BtnStepOver_Click(object sender, RoutedEventArgs e)    => Step(_session!.StepOver,    "Step over");
+    void BtnStepInto_Click(object sender, RoutedEventArgs e)    => Step(_session!.StepInto,    "Step into");
+    void BtnStepIntoOwn_Click(object sender, RoutedEventArgs e) => Step(_session!.StepIntoOwn, "Step into app");
+    void BtnStepOut_Click(object sender, RoutedEventArgs e)     => Step(_session!.StepOut,     "Step out");
 
     List<ProcItem> _allProcs = new();
     string? _procGroup;            // null = all kinds
@@ -1099,7 +1100,7 @@ public partial class MainWindow : Window
         BtnGo.IsEnabled = s != State.Running;
         BtnPause.IsEnabled = s == State.Running;
         BtnStop.IsEnabled = s != State.Idle;
-        BtnStepOver.IsEnabled = BtnStepInto.IsEnabled = BtnStepOut.IsEnabled = s == State.Stopped;
+        BtnStepOver.IsEnabled = BtnStepInto.IsEnabled = BtnStepIntoOwn.IsEnabled = BtnStepOut.IsEnabled = s == State.Stopped;
         BtnGo.Content = s == State.Stopped ? "▶  Continue  (F5)" : "▶  Go  (F5)";
         if (s == State.Running) _liveTimer.Start(); else _liveTimer.Stop();   // live value refresh
         if (s == State.Running) _libStateWin?.OnDebuggerResumed();   // drop the stale RTL snapshot
@@ -1464,6 +1465,8 @@ public partial class MainWindow : Window
             case Key.F10: BtnStepOver_Click(this, new RoutedEventArgs()); e.Handled = true; break;
             case Key.F11 when (Keyboard.Modifiers & ModifierKeys.Shift) != 0:
                 BtnStepOut_Click(this, new RoutedEventArgs()); e.Handled = true; break;
+            case Key.F11 when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+                BtnStepIntoOwn_Click(this, new RoutedEventArgs()); e.Handled = true; break;
             case Key.F11: BtnStepInto_Click(this, new RoutedEventArgs()); e.Handled = true; break;
             case Key.G when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
                 GotoLine(); e.Handled = true; break;
