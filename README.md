@@ -48,8 +48,9 @@ ABC application — `School`, 54 modules):
   `ClarionProperties.xml` override), remembered per solution, so the right project sources load
   instead of just the shipped `libsrc`.
 - **Searchable Procedures list** — filter across all procedures (text + a "kind" pulldown:
-  your global procedures, ThisWindow/Report local methods, or any specific class's methods)
-  and click to jump to source.
+  your global procedures, ThisWindow/Report local methods, any specific class's methods, or
+  **by image** — one entry per loaded EXE/DLL so you can focus on a single module in
+  multi-DLL applications) and click to jump to source.
 - **Call stack with per-frame locals** — click any frame to inspect *its* locals; the
   selected frame stays put across steps.
 - **Locals & Globals** — full enumeration (incl. threaded ABC procedures via scope-grouping),

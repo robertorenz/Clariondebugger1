@@ -17,6 +17,15 @@ Changes since 1.4.1:
   returned an incorrect range for the entered procedure, causing single-step to stop
   immediately instead of continuing inside it.
 
+- Filter procedures by image — the "kind" pulldown in the Procedures panel gains a
+  "── by image ──" section listing each loaded image (EXE and debug DLLs) with its procedure
+  count. Selecting one shows only that image's procedures — useful in multi-DLL applications
+  (e.g. SDGM0, SDGM2, SDGM3…) to focus on a specific module.
+
+- Fix "Global procedures (yours)" showing empty — procedures stored in TSWD without the
+  standard @F name-mangling suffix (common in some DLL builds) were incorrectly classified
+  as runtime thunks. They now appear in the App category.
+
 Download:
 - ClarionDebuggerSetup-1.5.0.exe - installer (per-user, no admin)
 - ClarionDebugger-1.5.0-portable-win-x86.zip - portable single .exe (unzip & run)

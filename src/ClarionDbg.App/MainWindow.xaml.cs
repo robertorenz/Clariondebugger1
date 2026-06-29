@@ -770,6 +770,7 @@ public partial class MainWindow : Window
 
     const string KeyLocal = "\x01Local";       // aggregate: ThisWindow/ThisReport/... methods
     const string KeyClasses = "\x01Classes";   // aggregate: all other (ABC/library) class methods
+    const string KeyImage = "\x02";            // prefix for per-image filter keys
     static bool IsLocalClass(string g) => g.StartsWith("THIS", StringComparison.OrdinalIgnoreCase);
 
     void FilterProcs(string text)
@@ -780,6 +781,7 @@ public partial class MainWindow : Window
             {
                 KeyLocal => items.Where(p => IsLocalClass(p.Group)),
                 KeyClasses => items.Where(p => p.Group != ProcItem.App && p.Group != ProcItem.Runtime && !IsLocalClass(p.Group)),
+                _ when _procGroup.StartsWith(KeyImage) => items.Where(p => p.Image == _procGroup[1..]),
                 _ => items.Where(p => p.Group == _procGroup)
             };
         if (!string.IsNullOrWhiteSpace(text))
@@ -817,6 +819,23 @@ public partial class MainWindow : Window
         foreach (var kv in counts.Where(kv => kv.Key != ProcItem.App && kv.Key != ProcItem.Runtime)
                                   .OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key))
             items.Add(new("   " + kv.Key, kv.Key, kv.Value));
+
+        // per-image filter: one entry per loaded image that has procedures (only shown when >1 image)
+        var images = _allProcs
+            .Where(p => !string.IsNullOrEmpty(p.Image))
+            .GroupBy(p => p.Image!)
+            .OrderByDescending(g => g.Any(p => p.FromExe))   // EXE first
+            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (images.Count > 1)
+        {
+            items.Add(new("── by image ──", null, total));
+            foreach (var g in images)
+            {
+                string prefix = g.Any(p => p.FromExe) ? "EXE" : "DLL";
+                items.Add(new($"  {prefix}: {g.Key}", KeyImage + g.Key, g.Count()));
+            }
+        }
 
         _suppressCatEvent = true;
         CmbProcCat.ItemsSource = items;
@@ -1544,7 +1563,12 @@ public sealed class ProcItem
         if (name.StartsWith("__") || name.Contains("$$$") || name.StartsWith("R$") || name.Contains("@_"))
             return Runtime;
         int i = name.IndexOf("@F", StringComparison.Ordinal);
-        if (i < 0) return Runtime;
+        if (i < 0)
+        {
+            // no @F suffix — if the name looks like a plain user identifier (letters/digits/underscore),
+            // treat it as an App procedure rather than a runtime thunk
+            return name.All(c => char.IsLetterOrDigit(c) || c == '_') && name.Length > 0 ? App : Runtime;
+        }
         string rest = name[(i + 2)..];
         if (rest.Length == 0 || !char.IsDigit(rest[0])) return App;     // free procedure (no SELF class)
         int d = 0; while (d < rest.Length && char.IsDigit(rest[d])) d++;
