@@ -30,7 +30,10 @@ ABC application — `School`, 54 modules):
 - **Launch & control** — runs the debuggee under the Win32 Debugging API
   (`CreateProcess(DEBUG_ONLY_THIS_PROCESS)`), ASLR-safe; **Go / Stop**,
   **Pause** (F6 — break into a freely-running program), and
-  **Step Over / Into / Out** (F10 / F11 / Shift+F11) at line granularity.
+  **Step Over / Into / Out / Into App** (F10 / F11 / Shift+F11 / Ctrl+F11) at line granularity.
+  *Step Into App* works like F11 but skips any procedure that is not in the same `.clw` source
+  module as the call site — so ABC class methods, ClaRUN, and other framework CLWs are run
+  transparently while you stay within your application code.
 - **Source-line breakpoints** — click the gutter; they snap to the nearest executable line.
 - **Multi-module** — parses the whole TSWD module table; pick any of the app's `.clw`
   modules, with source resolution that also finds the Clarion `libsrc` sources.
@@ -45,8 +48,9 @@ ABC application — `School`, 54 modules):
   `ClarionProperties.xml` override), remembered per solution, so the right project sources load
   instead of just the shipped `libsrc`.
 - **Searchable Procedures list** — filter across all procedures (text + a "kind" pulldown:
-  your global procedures, ThisWindow/Report local methods, or any specific class's methods)
-  and click to jump to source.
+  your global procedures, ThisWindow/Report local methods, any specific class's methods, or
+  **by image** — one entry per loaded EXE/DLL so you can focus on a single module in
+  multi-DLL applications) and click to jump to source.
 - **Call stack with per-frame locals** — click any frame to inspect *its* locals; the
   selected frame stays put across steps.
 - **Locals & Globals** — full enumeration (incl. threaded ABC procedures via scope-grouping),
@@ -112,7 +116,9 @@ ABC application — `School`, 54 modules):
   program is stopped, hovering a window also selects that thread in the debugger so its call stack
   and locals load — handy in multi-threaded Clarion apps (one thread per window) to jump straight
   to the thread you're looking at.
-- **WPF UI** — professional dark theme, breakpoint gutter, current-line highlight, output log.
+- **Dockable panel UI** — fully dockable layout powered by AvalonDock (VS2013 dark theme):
+  Procedures / Threads+Call Stack (left), Source editor (center, fixed), Watch / Locals / Globals
+  (right), and Output log (bottom). Panels can be resized, rearranged, and floated freely.
 
 Built on the decoded **TSWD** debug format (`TSWD_FORMAT.md`) — no dependency on the
 proprietary `D32` engine.
@@ -204,9 +210,10 @@ MSBuild.exe sample/dbgtest/dbgtest.cwproj /p:Configuration=Debug `
       `ThisWindow.Init`/method and the window-proc locals live a few frames up.
 - [x] **Searchable, click-to-navigate Procedures list** — filter by name, click to open the
       procedure's source ready to set a breakpoint.
-- [x] **Stepping** — step over / into / out at line granularity (F10 / F11 / Shift+F11),
-      via trap-flag single-stepping + the line table; locals re-read at every stop so values
-      update as you step.
+- [x] **Stepping** — step over / into / out / into-app at line granularity
+      (F10 / F11 / Shift+F11 / Ctrl+F11), via trap-flag single-stepping + the line table;
+      locals re-read at every stop so values update as you step. *Step Into App* skips
+      procedures outside the call-site's source module (ABC classes, framework CLWs, DLLs).
 - [x] **Live value refresh** — while the debuggee runs, the selected frame's locals and the
       globals re-read from process memory every ~400 ms, so values update in place as the app
       changes them (no re-break needed), as long as that frame is still alive.

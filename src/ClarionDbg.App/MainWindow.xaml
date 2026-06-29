@@ -3,14 +3,59 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:ClarionDbg.App"
         xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
+        xmlns:ad="https://github.com/Dirkster99/AvalonDock"
+        xmlns:adTheme="clr-namespace:AvalonDock.Themes;assembly=AvalonDock.Themes.VS2013"
         Title="Clarion Debugger" Height="760" Width="1200"
         Background="{StaticResource Bg}" Foreground="{StaticResource Fg}"
         FontFamily="Segoe UI" WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <Style x:Key="VarGrid" TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Border}"/>
+            <Setter Property="RowBackground" Value="Transparent"/>
+            <Setter Property="AlternatingRowBackground" Value="#FF2A2A2D"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="CanUserAddRows" Value="False"/>
+            <Setter Property="RowStyle">
+                <Setter.Value>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="ToolTip">
+                            <Setter.Value>
+                                <ToolTip Background="#FF1E1E1E" Foreground="{StaticResource Fg}"
+                                         BorderBrush="{StaticResource Accent}">
+                                    <TextBlock Text="{Binding Tip}" FontFamily="Consolas" FontSize="12"/>
+                                </ToolTip>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ColumnHeaderStyle">
+                <Setter.Value>
+                    <Style TargetType="DataGridColumnHeader">
+                        <Setter Property="Background" Value="{StaticResource PanelAlt}"/>
+                        <Setter Property="Foreground" Value="{StaticResource FgDim}"/>
+                        <Setter Property="Padding" Value="6,4"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
+                        <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="140"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -27,6 +72,8 @@
                         ToolTip="Break into the running program (F6)"/>
                 <Button x:Name="BtnStepOver" Click="BtnStepOver_Click" Content="⤼ Over (F10)" IsEnabled="False"/>
                 <Button x:Name="BtnStepInto" Click="BtnStepInto_Click" Content="⤓ Into (F11)" IsEnabled="False"/>
+                <Button x:Name="BtnStepIntoOwn" Click="BtnStepIntoOwn_Click" Content="⤓ Into App (Ctrl+F11)" IsEnabled="False"
+                        ToolTip="Step Into — only enters procedures in the main EXE; skips external DLLs (ClaRUN, ABC.dll, etc.)"/>
                 <Button x:Name="BtnStepOut" Click="BtnStepOut_Click" Content="⤒ Out (⇧F11)" IsEnabled="False"/>
                 <Button x:Name="BtnStop" Click="BtnStop_Click" Content="■  Stop" IsEnabled="False"/>
                 <Border Width="1" Background="{StaticResource Border}" Margin="8,2"/>
@@ -50,261 +97,225 @@
             </StackPanel>
         </Border>
 
-        <!-- Main panes -->
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="240" MinWidth="160"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*" MinWidth="320"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="320" MinWidth="220"/>
-            </Grid.ColumnDefinitions>
+        <!-- DockingManager -->
+        <ad:DockingManager Grid.Row="1" x:Name="DockManager" Background="{StaticResource Bg}">
+            <ad:DockingManager.Theme>
+                <adTheme:Vs2013DarkTheme/>
+            </ad:DockingManager.Theme>
+            <ad:LayoutRoot>
+                <ad:LayoutPanel Orientation="Vertical">
 
-            <!-- Left: Procedures + Call stack -->
-            <Grid Grid.Column="0" Background="{StaticResource Panel}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <DockPanel Grid.Row="0">
-                    <TextBlock DockPanel.Dock="Top" Text="PROCEDURES (click to open source)" Style="{StaticResource Header}"/>
-                    <ComboBox x:Name="CmbProcCat" DockPanel.Dock="Top" Margin="8,0,8,3" FontFamily="Consolas"
-                              FontSize="11" SelectionChanged="CmbProcCat_SelectionChanged"
-                              ToolTip="Show only a kind of procedure"/>
-                    <TextBox x:Name="TxtProcFilter" DockPanel.Dock="Top" Margin="8,0,8,4" Padding="4,2"
-                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                             BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="12"
-                             TextChanged="TxtProcFilter_TextChanged"
-                             ToolTip="Type to filter, e.g. BrowseStudents"/>
-                    <ListBox x:Name="LstProcs" Background="Transparent" Foreground="{StaticResource Fg}"
-                             BorderThickness="0" FontFamily="Consolas" FontSize="12"
-                             SelectionChanged="LstProcs_SelectionChanged">
-                        <ListBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Break on procedure entry" Click="BreakOnProcEntry_Click"/>
-                            </ContextMenu>
-                        </ListBox.ContextMenu>
-                        <ListBox.GroupStyle>
-                            <GroupStyle>
-                                <GroupStyle.HeaderTemplate>
-                                    <DataTemplate>
-                                        <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Margin="0,4,0,1">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontFamily="Segoe UI"
-                                                       FontSize="11" Foreground="{StaticResource Accent}" Margin="2,1,0,2"/>
-                                        </Border>
-                                    </DataTemplate>
-                                </GroupStyle.HeaderTemplate>
-                            </GroupStyle>
-                        </ListBox.GroupStyle>
-                    </ListBox>
-                </DockPanel>
-                <DockPanel Grid.Row="1">
-                    <TextBlock DockPanel.Dock="Top" Text="THREADS" Style="{StaticResource Header}"/>
-                    <ComboBox x:Name="CmbThreads" DockPanel.Dock="Top" Margin="8,0,8,4" FontFamily="Consolas"
-                              FontSize="12" SelectionChanged="CmbThreads_SelectionChanged"
-                              ToolTip="Switch threads to inspect another thread's call stack"/>
-                    <TextBlock DockPanel.Dock="Top" Text="CALL STACK (click a frame for its locals)" Style="{StaticResource Header}"/>
-                    <ListBox x:Name="LstStack" Background="Transparent" Foreground="{StaticResource Fg}"
-                             BorderThickness="0" FontFamily="Consolas" FontSize="12"
-                             SelectionChanged="LstStack_SelectionChanged"/>
-                </DockPanel>
-            </Grid>
+                    <!-- Main horizontal area -->
+                    <ad:LayoutPanel Orientation="Horizontal" DockHeight="*">
 
-            <GridSplitter Grid.Column="1" Width="3" Background="{StaticResource Border}" HorizontalAlignment="Stretch"/>
+                        <!-- Left pane: Procedures | Threads+Call Stack (as tabs) -->
+                        <ad:LayoutAnchorablePane DockWidth="240">
+                            <ad:LayoutAnchorable ContentId="Procedures" Title="Procedures" CanClose="False">
+                                <DockPanel Background="{StaticResource Panel}">
+                                    <TextBlock DockPanel.Dock="Top" Text="PROCEDURES (click to open source)" Style="{StaticResource Header}"/>
+                                    <ComboBox x:Name="CmbProcCat" DockPanel.Dock="Top" Margin="8,0,8,3" FontFamily="Consolas"
+                                              FontSize="11" SelectionChanged="CmbProcCat_SelectionChanged"
+                                              ToolTip="Show only a kind of procedure"/>
+                                    <TextBox x:Name="TxtProcFilter" DockPanel.Dock="Top" Margin="8,0,8,4" Padding="4,2"
+                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                             BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="12"
+                                             TextChanged="TxtProcFilter_TextChanged"
+                                             ToolTip="Type to filter, e.g. BrowseStudents"/>
+                                    <ListBox x:Name="LstProcs" Background="Transparent" Foreground="{StaticResource Fg}"
+                                             BorderThickness="0" FontFamily="Consolas" FontSize="12"
+                                             SelectionChanged="LstProcs_SelectionChanged">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Break on procedure entry" Click="BreakOnProcEntry_Click"/>
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
+                                        <ListBox.GroupStyle>
+                                            <GroupStyle>
+                                                <GroupStyle.HeaderTemplate>
+                                                    <DataTemplate>
+                                                        <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Margin="0,4,0,1">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontFamily="Segoe UI"
+                                                                       FontSize="11" Foreground="{StaticResource Accent}" Margin="2,1,0,2"/>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </GroupStyle.HeaderTemplate>
+                                            </GroupStyle>
+                                        </ListBox.GroupStyle>
+                                    </ListBox>
+                                </DockPanel>
+                            </ad:LayoutAnchorable>
 
-            <!-- Center: Source -->
-            <Grid Grid.Column="2" Background="{StaticResource Bg}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <DockPanel Grid.Row="0" Margin="8,4">
-                    <TextBlock DockPanel.Dock="Left" Text="MODULE" Foreground="{StaticResource FgDim}"
-                               FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <ComboBox x:Name="CmbModule" Width="220" DockPanel.Dock="Left" FontFamily="Consolas"
-                              FontSize="12" SelectionChanged="CmbModule_SelectionChanged">
-                        <ComboBox.GroupStyle>
-                            <GroupStyle>
-                                <GroupStyle.HeaderTemplate>
-                                    <DataTemplate>
-                                        <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Margin="0,3,0,1">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontFamily="Segoe UI"
-                                                       FontSize="11" Foreground="{StaticResource Accent}" Margin="2,1,0,2"/>
-                                        </Border>
-                                    </DataTemplate>
-                                </GroupStyle.HeaderTemplate>
-                            </GroupStyle>
-                        </ComboBox.GroupStyle>
-                    </ComboBox>
-                    <TextBlock x:Name="TxtSourceName" Text="(no source)" Foreground="{StaticResource FgDim}"
-                               FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                </DockPanel>
-                <avalon:TextEditor x:Name="Editor" Grid.Row="1"
-                                   IsReadOnly="True" ShowLineNumbers="True" WordWrap="False"
-                                   FontFamily="Consolas" FontSize="13"
-                                   Background="{StaticResource Bg}" Foreground="{StaticResource Fg}"
-                                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                    <avalon:TextEditor.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Run to cursor" Click="RunToCursor_Click"/>
-                            <MenuItem Header="Set next statement" Click="SetNextStatement_Click"/>
-                            <MenuItem Header="Toggle breakpoint" Click="ToggleBreakMenu_Click"/>
-                        </ContextMenu>
-                    </avalon:TextEditor.ContextMenu>
-                </avalon:TextEditor>
-            </Grid>
+                            <ad:LayoutAnchorable ContentId="CallStack" Title="Threads / Call Stack" CanClose="False">
+                                <DockPanel Background="{StaticResource Panel}">
+                                    <TextBlock DockPanel.Dock="Top" Text="THREADS" Style="{StaticResource Header}"/>
+                                    <ComboBox x:Name="CmbThreads" DockPanel.Dock="Top" Margin="8,0,8,4" FontFamily="Consolas"
+                                              FontSize="12" SelectionChanged="CmbThreads_SelectionChanged"
+                                              ToolTip="Switch threads to inspect another thread's call stack"/>
+                                    <TextBlock DockPanel.Dock="Top" Text="CALL STACK (click a frame for its locals)" Style="{StaticResource Header}"/>
+                                    <ListBox x:Name="LstStack" Background="Transparent" Foreground="{StaticResource Fg}"
+                                             BorderThickness="0" FontFamily="Consolas" FontSize="12"
+                                             SelectionChanged="LstStack_SelectionChanged"/>
+                                </DockPanel>
+                            </ad:LayoutAnchorable>
+                        </ad:LayoutAnchorablePane>
 
-            <GridSplitter Grid.Column="3" Width="3" Background="{StaticResource Border}" HorizontalAlignment="Stretch"/>
+                        <!-- Center: Source (document, fixed) -->
+                        <ad:LayoutDocumentPane>
+                            <ad:LayoutDocument ContentId="Source" Title="Source" CanClose="False" CanFloat="False">
+                                <Grid Background="{StaticResource Bg}">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <DockPanel Grid.Row="0" Margin="8,4">
+                                        <TextBlock DockPanel.Dock="Left" Text="MODULE" Foreground="{StaticResource FgDim}"
+                                                   FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <ComboBox x:Name="CmbModule" Width="220" DockPanel.Dock="Left" FontFamily="Consolas"
+                                                  FontSize="12" SelectionChanged="CmbModule_SelectionChanged">
+                                            <ComboBox.GroupStyle>
+                                                <GroupStyle>
+                                                    <GroupStyle.HeaderTemplate>
+                                                        <DataTemplate>
+                                                            <Border BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Margin="0,3,0,1">
+                                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontFamily="Segoe UI"
+                                                                           FontSize="11" Foreground="{StaticResource Accent}" Margin="2,1,0,2"/>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </GroupStyle.HeaderTemplate>
+                                                </GroupStyle>
+                                            </ComboBox.GroupStyle>
+                                        </ComboBox>
+                                        <TextBlock x:Name="TxtSourceName" Text="(no source)" Foreground="{StaticResource FgDim}"
+                                                   FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                    </DockPanel>
+                                    <avalon:TextEditor x:Name="Editor" Grid.Row="1"
+                                                       IsReadOnly="True" ShowLineNumbers="True" WordWrap="False"
+                                                       FontFamily="Consolas" FontSize="13"
+                                                       Background="{StaticResource Bg}" Foreground="{StaticResource Fg}"
+                                                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                        <avalon:TextEditor.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Run to cursor" Click="RunToCursor_Click"/>
+                                                <MenuItem Header="Set next statement" Click="SetNextStatement_Click"/>
+                                                <MenuItem Header="Toggle breakpoint" Click="ToggleBreakMenu_Click"/>
+                                            </ContextMenu>
+                                        </avalon:TextEditor.ContextMenu>
+                                    </avalon:TextEditor>
+                                </Grid>
+                            </ad:LayoutDocument>
+                        </ad:LayoutDocumentPane>
 
-            <!-- Right: Locals + Globals -->
-            <Grid Grid.Column="4" Background="{StaticResource Panel}">
-                <Grid.Resources>
-                    <Style x:Key="VarGrid" TargetType="DataGrid">
-                        <Setter Property="AutoGenerateColumns" Value="False"/>
-                        <Setter Property="Background" Value="Transparent"/>
-                        <Setter Property="Foreground" Value="{StaticResource Fg}"/>
-                        <Setter Property="BorderThickness" Value="0"/>
-                        <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-                        <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Border}"/>
-                        <Setter Property="RowBackground" Value="Transparent"/>
-                        <Setter Property="AlternatingRowBackground" Value="#FF2A2A2D"/>
-                        <Setter Property="HeadersVisibility" Value="Column"/>
-                        <Setter Property="IsReadOnly" Value="True"/>
-                        <Setter Property="FontFamily" Value="Consolas"/>
-                        <Setter Property="FontSize" Value="12"/>
-                        <Setter Property="CanUserAddRows" Value="False"/>
-                        <Setter Property="RowStyle">
-                            <Setter.Value>
-                                <Style TargetType="DataGridRow">
-                                    <Setter Property="ToolTip">
-                                        <Setter.Value>
-                                            <ToolTip Background="#FF1E1E1E" Foreground="{StaticResource Fg}"
-                                                     BorderBrush="{StaticResource Accent}">
-                                                <TextBlock Text="{Binding Tip}" FontFamily="Consolas" FontSize="12"/>
-                                            </ToolTip>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </Setter.Value>
-                        </Setter>
-                        <Setter Property="ColumnHeaderStyle">
-                            <Setter.Value>
-                                <Style TargetType="DataGridColumnHeader">
-                                    <Setter Property="Background" Value="{StaticResource PanelAlt}"/>
-                                    <Setter Property="Foreground" Value="{StaticResource FgDim}"/>
-                                    <Setter Property="Padding" Value="6,4"/>
-                                    <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
-                                    <Setter Property="BorderThickness" Value="0,0,1,1"/>
-                                </Style>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </Grid.Resources>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="110" MinHeight="60"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="WATCH" Style="{StaticResource Header}"/>
-                <TextBox x:Name="TxtWatchAdd" Grid.Row="1" Margin="8,0,8,4" Padding="4,2"
-                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                         BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="11"
-                         KeyDown="TxtWatchAdd_KeyDown"
-                         ToolTip="Type a variable name or expression (e.g. count > 5) and press Enter to watch it"/>
-                <DataGrid x:Name="GridWatch" Grid.Row="2" Style="{StaticResource VarGrid}"
-                          MouseDoubleClick="GridWatch_DoubleClick" PreviewMouseRightButtonDown="Grid_RightDown">
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Set Value…" Click="SetValue_Click"/>
-                            <MenuItem Header="Copy value" Click="CopyValue_Click"/>
-                            <MenuItem Header="Copy name" Click="CopyName_Click"/>
-                            <MenuItem Header="View memory…" Click="ViewMemory_Click"/>
-                            <MenuItem Header="View as array…" Click="ViewArray_Click"/>
-                            <MenuItem Header="Resolve on current thread" Click="ResolveThreaded_Click"
-                                      ToolTip="For THREADed (.cwtls) data: read the live value for the stopped thread via THR$GetInstance"/>
-                            <Separator/>
-                            <MenuItem Header="Remove watch" Click="RemoveWatch_Click"/>
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Expr" Binding="{Binding Name}" Width="Auto"/>
-                        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto"/>
-                        <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-                <TextBlock x:Name="TxtLocalsHeader" Grid.Row="3" Text="LOCALS (current procedure)" Style="{StaticResource Header}"/>
-                <TextBox x:Name="TxtLocalsFilter" Grid.Row="4" Margin="8,0,8,4" Padding="4,2"
-                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                         BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="11"
-                         TextChanged="TxtLocalsFilter_TextChanged" ToolTip="Filter locals by name"/>
-                <DataGrid x:Name="GridLocals" Grid.Row="5" Style="{StaticResource VarGrid}"
-                          MouseDoubleClick="GridLocals_DoubleClick" PreviewMouseRightButtonDown="Grid_RightDown">
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Set Value…" Click="SetValue_Click"/>
-                            <MenuItem Header="Copy value" Click="CopyValue_Click"/>
-                            <MenuItem Header="Copy name" Click="CopyName_Click"/>
-                            <MenuItem Header="View memory…" Click="ViewMemory_Click"/>
-                            <MenuItem Header="View as array…" Click="ViewArray_Click"/>
-                            <MenuItem Header="Resolve on current thread" Click="ResolveThreaded_Click"
-                                      ToolTip="For THREADed (.cwtls) data: read the live value for the stopped thread via THR$GetInstance"/>
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto"/>
-                        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto"/>
-                        <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
-                        <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="Auto"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-                <TextBlock Grid.Row="6" Text="GLOBALS" Style="{StaticResource Header}"/>
-                <TextBox x:Name="TxtGlobalsFilter" Grid.Row="7" Margin="8,0,8,4" Padding="4,2"
-                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                         BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="11"
-                         TextChanged="TxtGlobalsFilter_TextChanged" ToolTip="Filter globals by name"/>
-                <DataGrid x:Name="GridVars" Grid.Row="8" Style="{StaticResource VarGrid}"
-                          MouseDoubleClick="GridVars_DoubleClick" PreviewMouseRightButtonDown="Grid_RightDown">
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Set Value…" Click="SetValue_Click"/>
-                            <MenuItem Header="Copy value" Click="CopyValue_Click"/>
-                            <MenuItem Header="Copy name" Click="CopyName_Click"/>
-                            <MenuItem Header="View memory…" Click="ViewMemory_Click"/>
-                            <MenuItem Header="View as array…" Click="ViewArray_Click"/>
-                            <MenuItem Header="Resolve on current thread" Click="ResolveThreaded_Click"
-                                      ToolTip="For THREADed (.cwtls) data: read the live value for the stopped thread via THR$GetInstance"/>
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto"/>
-                        <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto"/>
-                        <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
-                        <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="Auto"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </Grid>
-        </Grid>
+                        <!-- Right pane: Watch | Locals | Globals (as tabs) -->
+                        <ad:LayoutAnchorablePane DockWidth="320">
+                            <ad:LayoutAnchorable ContentId="Watch" Title="Watch" CanClose="False">
+                                <DockPanel Background="{StaticResource Panel}">
+                                    <TextBox x:Name="TxtWatchAdd" DockPanel.Dock="Top" Margin="8,6,8,4" Padding="4,2"
+                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                             BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="11"
+                                             KeyDown="TxtWatchAdd_KeyDown"
+                                             ToolTip="Type a variable name or expression (e.g. count > 5) and press Enter to watch it"/>
+                                    <DataGrid x:Name="GridWatch" Style="{StaticResource VarGrid}"
+                                              MouseDoubleClick="GridWatch_DoubleClick" PreviewMouseRightButtonDown="Grid_RightDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Set Value…" Click="SetValue_Click"/>
+                                                <MenuItem Header="Copy value" Click="CopyValue_Click"/>
+                                                <MenuItem Header="Copy name" Click="CopyName_Click"/>
+                                                <MenuItem Header="View memory…" Click="ViewMemory_Click"/>
+                                                <MenuItem Header="View as array…" Click="ViewArray_Click"/>
+                                                <MenuItem Header="Resolve on current thread" Click="ResolveThreaded_Click"
+                                                          ToolTip="For THREADed (.cwtls) data: read the live value for the stopped thread via THR$GetInstance"/>
+                                                <Separator/>
+                                                <MenuItem Header="Remove watch" Click="RemoveWatch_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Expr" Binding="{Binding Name}" Width="Auto"/>
+                                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto"/>
+                                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </ad:LayoutAnchorable>
 
-        <!-- Output log -->
-        <Grid Grid.Row="2" Background="{StaticResource Panel}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" Text="OUTPUT" Style="{StaticResource Header}"/>
-            <TextBox x:Name="TxtLog" Grid.Row="1" Background="Transparent" Foreground="{StaticResource Ok}"
-                     BorderThickness="0" FontFamily="Consolas" FontSize="12" IsReadOnly="True"
-                     VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
-        </Grid>
+                            <ad:LayoutAnchorable ContentId="Locals" Title="Locals" CanClose="False">
+                                <DockPanel Background="{StaticResource Panel}">
+                                    <TextBlock x:Name="TxtLocalsHeader" DockPanel.Dock="Top"
+                                               Text="LOCALS (current procedure)" Style="{StaticResource Header}"/>
+                                    <TextBox x:Name="TxtLocalsFilter" DockPanel.Dock="Top" Margin="8,0,8,4" Padding="4,2"
+                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                             BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="11"
+                                             TextChanged="TxtLocalsFilter_TextChanged" ToolTip="Filter locals by name"/>
+                                    <DataGrid x:Name="GridLocals" Style="{StaticResource VarGrid}"
+                                              MouseDoubleClick="GridLocals_DoubleClick" PreviewMouseRightButtonDown="Grid_RightDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Set Value…" Click="SetValue_Click"/>
+                                                <MenuItem Header="Copy value" Click="CopyValue_Click"/>
+                                                <MenuItem Header="Copy name" Click="CopyName_Click"/>
+                                                <MenuItem Header="View memory…" Click="ViewMemory_Click"/>
+                                                <MenuItem Header="View as array…" Click="ViewArray_Click"/>
+                                                <MenuItem Header="Resolve on current thread" Click="ResolveThreaded_Click"
+                                                          ToolTip="For THREADed (.cwtls) data: read the live value for the stopped thread via THR$GetInstance"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto"/>
+                                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto"/>
+                                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                                            <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="Auto"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </ad:LayoutAnchorable>
+
+                            <ad:LayoutAnchorable ContentId="Globals" Title="Globals" CanClose="False">
+                                <DockPanel Background="{StaticResource Panel}">
+                                    <TextBox x:Name="TxtGlobalsFilter" DockPanel.Dock="Top" Margin="8,6,8,4" Padding="4,2"
+                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                             BorderBrush="{StaticResource Border}" FontFamily="Consolas" FontSize="11"
+                                             TextChanged="TxtGlobalsFilter_TextChanged" ToolTip="Filter globals by name"/>
+                                    <DataGrid x:Name="GridVars" Style="{StaticResource VarGrid}"
+                                              MouseDoubleClick="GridVars_DoubleClick" PreviewMouseRightButtonDown="Grid_RightDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Set Value…" Click="SetValue_Click"/>
+                                                <MenuItem Header="Copy value" Click="CopyValue_Click"/>
+                                                <MenuItem Header="Copy name" Click="CopyName_Click"/>
+                                                <MenuItem Header="View memory…" Click="ViewMemory_Click"/>
+                                                <MenuItem Header="View as array…" Click="ViewArray_Click"/>
+                                                <MenuItem Header="Resolve on current thread" Click="ResolveThreaded_Click"
+                                                          ToolTip="For THREADed (.cwtls) data: read the live value for the stopped thread via THR$GetInstance"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto"/>
+                                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto"/>
+                                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                                            <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="Auto"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </ad:LayoutAnchorable>
+                        </ad:LayoutAnchorablePane>
+
+                    </ad:LayoutPanel>
+
+                    <!-- Bottom: Output log -->
+                    <ad:LayoutAnchorablePane DockHeight="140">
+                        <ad:LayoutAnchorable ContentId="Output" Title="Output" CanClose="False">
+                            <TextBox x:Name="TxtLog" Background="{StaticResource Panel}" Foreground="{StaticResource Ok}"
+                                     BorderThickness="0" FontFamily="Consolas" FontSize="12" IsReadOnly="True"
+                                     VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" Padding="4"/>
+                        </ad:LayoutAnchorable>
+                    </ad:LayoutAnchorablePane>
+
+                </ad:LayoutPanel>
+            </ad:LayoutRoot>
+        </ad:DockingManager>
 
         <!-- Status bar -->
-        <Border Grid.Row="3" Background="{StaticResource Accent}">
+        <Border Grid.Row="2" Background="{StaticResource Accent}">
             <TextBlock x:Name="TxtStatus" Text="Ready" Foreground="White" Margin="10,3" FontSize="12"/>
         </Border>
     </Grid>

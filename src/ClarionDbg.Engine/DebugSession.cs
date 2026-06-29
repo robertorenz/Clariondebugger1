@@ -56,9 +56,9 @@ public sealed partial class DebugSession
     Thread? _worker;
 
     // ---- stepping ----
-    enum Act { Continue, Into, Over, Out, Terminate, Eval }
+    enum Act { Continue, Into, Over, Out, Terminate, Eval, IntoOwn }
     volatile Act _act = Act.Continue;
-    enum StepKind { None, Into, Over }
+    enum StepKind { None, Into, Over, IntoOwn }
     StepKind _stepping = StepKind.None;
     string? _stepModule; int _stepLine;
     uint _stepEbp, _stepLo, _stepHi;
@@ -108,10 +108,11 @@ public sealed partial class DebugSession
         Start(breaks);
     }
 
-    public void Continue() { _act = Act.Continue; _resume.Set(); }
-    public void StepInto() { _act = Act.Into; _resume.Set(); }
-    public void StepOver() { _act = Act.Over; _resume.Set(); }
-    public void StepOut()  { _act = Act.Out;  _resume.Set(); }
+    public void Continue()     { _act = Act.Continue;  _resume.Set(); }
+    public void StepInto()    { _act = Act.Into;      _resume.Set(); }
+    public void StepOver()    { _act = Act.Over;      _resume.Set(); }
+    public void StepOut()     { _act = Act.Out;       _resume.Set(); }
+    public void StepIntoOwn() { _act = Act.IntoOwn;  _resume.Set(); }
     public void Terminate() { _act = Act.Terminate; _resume.Set(); }
 
     volatile bool _pauseRequested;
@@ -378,8 +379,9 @@ public sealed partial class DebugSession
 
         switch (_act)
         {
-            case Act.Into: _stepping = StepKind.Into; Trap(ref ctx, hThread); break;
-            case Act.Over: _stepping = StepKind.Over; Trap(ref ctx, hThread); break;
+            case Act.Into:    _stepping = StepKind.Into;    Trap(ref ctx, hThread); break;
+            case Act.Over:    _stepping = StepKind.Over;    Trap(ref ctx, hThread); break;
+            case Act.IntoOwn: _stepping = StepKind.IntoOwn; Trap(ref ctx, hThread); break;
             case Act.Out:
                 uint ret = ReadDword(ctx.Ebp + 4);
                 if (ret != 0 && IsCode(ret)) SetTempBp(ret, false);
@@ -415,6 +417,18 @@ public sealed partial class DebugSession
             uint ret = ReadDword(ctx.Esp);
             if (ret != 0 && IsCode(ret)) { SetTempBp(ret, true); return Native.DBG_CONTINUE; }
             Trap(ref ctx, hThread); return Native.DBG_CONTINUE;
+        }
+        if (_stepping == StepKind.IntoOwn && !inProc)
+        {
+            // only enter code from the same source module (same CLW) — skips ABC classes,
+            // external DLLs, and any other CLW that isn't the one we started stepping in
+            bool ownCode = _stepModule != null && l?.Module == _stepModule && ModuleAt(eip) == _exe;
+            if (!ownCode)
+            {
+                uint ret = ReadDword(ctx.Esp);
+                if (ret != 0 && IsCode(ret)) { SetTempBp(ret, true); return Native.DBG_CONTINUE; }
+                Trap(ref ctx, hThread); return Native.DBG_CONTINUE;
+            }
         }
         if (inText && newLine) return Stop(ref ctx, hThread, 0);
         Trap(ref ctx, hThread);
